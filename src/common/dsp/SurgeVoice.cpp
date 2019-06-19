@@ -36,7 +36,7 @@ inline float get1f(__m128 m, int i)
 float SurgeVoiceState::getPitch()
 {
    return key + mainChannelState->pitchBendInSemitones + voiceChannelState->pitchBendInSemitones +
-          detune;
+          detune + MTS_RetuningInSemitones(mtsclient,key);
 }
 
 SurgeVoice::SurgeVoice()
@@ -53,7 +53,8 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
                        float detune,
                        MidiKeyState* keyState,
                        MidiChannelState* mainChannelState,
-                       MidiChannelState* voiceChannelState)
+                       MidiChannelState* voiceChannelState,
+                       MTSClient* mtsclient)
 //: fb(storage,oscene)
 {
    // assign pointers
@@ -82,6 +83,7 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
       state.portasrc_key = state.getPitch();
    else
       state.portasrc_key = storage->last_key[scene_id];
+    state.mtsclient=mtsclient;
 
    storage->last_key[scene_id] = key;
    state.portaphase = 0;

@@ -4,6 +4,7 @@
 #pragma once
 #include "SurgeStorage.h"
 #include "Oscillator.h"
+#include "libMTSClient.h"
 #include "SurgeVoiceState.h"
 #include "AdsrEnvelope.h"
 #include "LfoModulationSource.h"
@@ -34,7 +35,8 @@ public:
               float detune,
               MidiKeyState* keyState,
               MidiChannelState* mainChannelState,
-              MidiChannelState* voiceChannelState);
+              MidiChannelState* voiceChannelState,
+              MTSClient* mtsclient);
    ~SurgeVoice();
 
    void release();

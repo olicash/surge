@@ -6,6 +6,7 @@
 #include "SurgeVoice.h"
 #include "effect/Effect.h"
 #include "BiquadFilter.h"
+#include "libMTSClient.h"
 
 struct QuadFilterChainState;
 
@@ -200,6 +201,8 @@ public:
    int demo_counter = 0;
 
    QuadFilterChainState* FBQ[2];
+    
+    MTSClient *mtsclient;
 
    // these have to be thread-safe, so keep private
 private:

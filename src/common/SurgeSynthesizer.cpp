@@ -161,7 +161,9 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer* parent)
    mpeVoices = 0;
    mpePitchBendRange = Surge::Storage::getUserDefaultValue(&storage, "mpePitchBendRange", 48);
    mpeGlobalPitchBendRange = 2;
-
+    
+   mtsclient=MTS_RegisterClient();
+    
    //	load_patch(0);
 }
 
@@ -182,6 +184,7 @@ SurgeSynthesizer::~SurgeSynthesizer()
    }
    for (int i = 0; i < n_customcontrollers; i++)
       delete storage.getPatch().scene[0].modsources[ms_ctrl1 + i];
+    MTS_DeregisterClient(mtsclient);
 }
 
 int SurgeSynthesizer::calculateChannelMask(int channel, int key)
@@ -401,7 +404,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
          new (nvoice) SurgeVoice(&storage, &storage.getPatch().scene[scene],
                                  storage.getPatch().scenedata[scene], key, velocity, channel, scene,
                                  detune, &channelState[channel].keyState[key],
-                                 &channelState[mpeMainChannel], &channelState[channel]);
+                                 &channelState[mpeMainChannel], &channelState[channel], mtsclient);
       }
       break;
    }
@@ -436,7 +439,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
          new (nvoice) SurgeVoice(&storage, &storage.getPatch().scene[scene],
                                  storage.getPatch().scenedata[scene], key, velocity, channel, scene,
                                  detune, &channelState[channel].keyState[key],
-                                 &channelState[mpeMainChannel], &channelState[channel]);
+                                 &channelState[mpeMainChannel], &channelState[channel], mtsclient);
       }
    }
    break;
@@ -482,7 +485,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
             new (nvoice) SurgeVoice(&storage, &storage.getPatch().scene[scene],
                                     storage.getPatch().scenedata[scene], key, velocity, channel,
                                     scene, detune, &channelState[channel].keyState[key],
-                                    &channelState[mpeMainChannel], &channelState[channel]);
+                                    &channelState[mpeMainChannel], &channelState[channel], mtsclient);
          }
       }
    }

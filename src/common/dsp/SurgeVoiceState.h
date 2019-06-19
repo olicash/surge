@@ -13,6 +13,7 @@ struct SurgeVoiceState
    MidiChannelState* voiceChannelState;
    int key, velocity, channel, scene_id;
    float portasrc_key, portaphase;
+   struct MTSClient* mtsclient;
 
    float getPitch();
 };
