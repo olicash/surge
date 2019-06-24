@@ -34,7 +34,7 @@ struct mtsclientglobal
     mts_pv RegisterClient,DeregisterClient;mts_cd GetTuning;mts_bool HasMaster;    // Interface to lib
     double iet[128];const double *esp_retuning;    // tuning tables
     
-#ifdef WIN
+#ifdef _WIN32
     virtual void load_lib(){
         if (!(handle=LoadLibraryA("C:\\Program Files\\MTS\\libMTS.dll"))) return;
         RegisterClient   =(mts_pv)GetProcAddress(handle,"MTS_RegisterClient");
