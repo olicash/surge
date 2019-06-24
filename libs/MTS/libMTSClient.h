@@ -17,11 +17,18 @@ typedef struct MTSClient MTSClient;
 extern double MTS_NoteToFrequency(MTSClient *client,char midinote);
 extern double MTS_RetuningInSemitones(MTSClient *client,char midinote);
 extern double MTS_RetuningAsRatio(MTSClient *client,char midinote);
+    
+// Returns the name of the current scale
+extern const char *MTS_GetScaleName(MTSClient *client);
 
 // Register/deregister as a client
 extern MTSClient* MTS_RegisterClient();
 extern void MTS_DeregisterClient(MTSClient*);
 extern bool MTS_HasMaster(MTSClient*);
+    
+// Parse incoming MIDI data to update local retuning
+extern void MTS_ParseMIDIDataU(MTSClient *client,const unsigned char *buffer,int len);
+extern void MTS_ParseMIDIData(MTSClient *client,const char *buffer,int len);
 
 };
 
