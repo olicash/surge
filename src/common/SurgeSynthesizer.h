@@ -202,7 +202,7 @@ public:
 
    QuadFilterChainState* FBQ[2];
     
-    MTSClient *mtsclient;
+   MTSClient *mtsclient;
 
    // these have to be thread-safe, so keep private
 private:

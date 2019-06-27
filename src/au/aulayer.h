@@ -100,7 +100,8 @@ public:
 
    virtual OSStatus
    HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 data1, UInt8 data2, UInt32 inStartFrame);
-
+   virtual OSStatus
+   HandleSysEx(const UInt8* inData,UInt32 inLength);
    virtual ComponentResult GetParameterList(AudioUnitScope inScope,
                                             AudioUnitParameterID* outParameterList,
                                             UInt32& outNumParameters);

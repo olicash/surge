@@ -219,6 +219,9 @@ void SurgeVst3Processor::processEvent(const Event& e)
       getSurge()->polyAftertouch(e.polyPressure.channel, e.polyPressure.pitch,
                                  e.polyPressure.pressure);
       break;
+   case Event::kDataEvent:
+      if (e.data.type == DataEvent::kMidiSysEx) MTS_ParseMIDIDataU(getSurge()->mtsclient, e.data.bytes, e.data.size);
+      break;
    }
 }
 
