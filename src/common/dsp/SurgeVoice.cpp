@@ -73,7 +73,7 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
    state.channel = channel;
    state.fvel = velocity / 127.f;
    state.scene_id = scene_id;
-   state.detune = detune;
+   state.detune = detune / 100.f;
    state.uberrelease = false;
    state.keyState = keyState;
    state.mainChannelState = mainChannelState;
