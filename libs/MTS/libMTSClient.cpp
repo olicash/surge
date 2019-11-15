@@ -36,11 +36,20 @@ struct mtsclientglobal
     double iet[128];const double *esp_retuning;    // tuning tables
     
 #ifdef _WIN32
-    virtual void load_lib(){
-        if (!(handle=LoadLibraryA("C:\\Program Files\\OddSound\\MTS\\libMTS.dll"))) return;
+    virtual void load_lib()
+	{
+		char buffer[8192];HKEY hkey;DWORD type,l=8192;
+		RegOpenKeyEx(HKEY_LOCAL_MACHINE,"SOFTWARE\\OddSound\\MTS",0,KEY_QUERY_VALUE,&hkey);
+		if (!hkey) return;
+		DWORD ret=RegQueryValueEx(hkey,"Path",0,&type,(LPBYTE)buffer,&l);
+		RegCloseKey(hkey);
+		if (ret || (l<=1)) return;
+        if (buffer[strlen(buffer)-1]!='\\') strcat(buffer,"\\");
+		strcat(buffer,"LIBMTS.dll");
+		if (!(handle=LoadLibraryA(buffer))) return;
         RegisterClient   =(mts_pv)GetProcAddress(handle,"MTS_RegisterClient");
         DeregisterClient =(mts_pv)GetProcAddress(handle,"MTS_DeregisterClient");
-        GetScaleName    =(mts_pcc)      GetProcAddress(handle,"MTS_GetScaleName");
+        GetScaleName     =(mts_pcc)GetProcAddress(handle,"MTS_GetScaleName");
         GetTuning        =(mts_cd)GetProcAddress(handle,"MTS_GetTuningTable");
         HasMaster        =(mts_bool)GetProcAddress(handle,"MTS_HasMaster");
     }
@@ -51,7 +60,7 @@ struct mtsclientglobal
         if (!(handle=dlopen("/Library/Application Support/OddSound/MTS/libMTS.dylib",RTLD_NOW))) return;
         RegisterClient   =(mts_pv)dlsym(handle,"MTS_RegisterClient");
         DeregisterClient =(mts_pv)dlsym(handle,"MTS_DeregisterClient");
-        GetScaleName    =(mts_pcc)      dlsym(handle,"MTS_GetScaleName");
+        GetScaleName     =(mts_pcc)dlsym(handle,"MTS_GetScaleName");
         GetTuning        =(mts_cd)dlsym(handle,"MTS_GetTuningTable");
         HasMaster        =(mts_bool)dlsym(handle,"MTS_HasMaster");
     }
