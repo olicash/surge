@@ -25,7 +25,7 @@ Options:
     -h, --help              Show help.
     -v, --verbose           Verbose output.
     -p, --project=PROJECT   Select a specific PROJECT, which can be either
-                            vst2, vst3 or headless.
+                            vst2, vst3, lv2 or headless.
     -d, --debug             Use a debug version.
     -l, --local             Install/uninstall built assets under /home instead
                             of /usr
@@ -34,7 +34,7 @@ EOHELP
 
 RED=`tput setaf 1`
 GREEN=`tput setaf 2`
-NC=`tput init`
+NC=`tput sgr0`
 
 prerequisite_check()
 {
@@ -134,6 +134,8 @@ run_build_headless()
     set +o pipefail
     if [[ $build_suc = 0 ]]; then
         echo ${GREEN}Build of surge-headless succeeded${NC}
+        mkdir -p "$headless_src_path"
+        cp build/surge-headless "${headless_src_path}/${dest_headless_name}"
     else
         echo
         echo ${RED}** Build of headless failed**${NC}
@@ -156,6 +158,11 @@ run_builds()
     if [ ! -z "$option_vst3" ]; then
         run_premake_if
         run_build "vst3"
+    fi
+
+    if [ ! -z "$option_lv2" ]; then
+        run_premake_if
+        run_build "lv2"
     fi
 
     if [ ! -z "$option_headless" ]; then
@@ -181,7 +188,14 @@ run_install()
                           $vst3_dest_path
     fi
 
-    if [ ! -z "$option_headless" ]; then
+    if [ ! -z "$option_lv2" ]; then
+        echo "Installing LV2"
+        # No dest plugin name here since we are a bundle
+        rsync -r --delete $lv2_src_path \
+                          $lv2_dest_path
+    fi
+
+    if [ ! -z "$option_headless" ] && [ -d "$headless_dest_path" ]; then
         echo "Installing Headless"
         rsync -r --delete $headless_src_path \
                           $headless_dest_path/$dest_headless_name
@@ -202,6 +216,10 @@ run_clean_builds()
     if [ ! -z "$option_vst3" ]; then
         run_clean "vst3"
     fi
+
+    if [ ! -z "$option_lv2" ]; then
+        run_clean "lv2"
+    fi
 }
 
 run_clean_all()
@@ -209,7 +227,7 @@ run_clean_all()
     run_clean_builds
 
     echo "Cleaning additional assets"
-    rm -rf Makefile surge-vst2.make surge-vst3.make surge-headless.make build_logs target obj premake-stamp
+    rm -rf Makefile surge-vst2.make surge-vst3.make surge-lv2.make surge-headless.make build_logs target obj premake-stamp build
 }
 
 run_uninstall()
@@ -221,11 +239,19 @@ run_uninstall()
     fi
 
     if [ ! -z "$option_vst3" ]; then
-        rm -vf $vst3_dest_path/$dest_plugin_name
+	rm -vf $vst3_dest_path/Surge.vst3/Contents/x86_64-linux/$dest_plugin_name
+	rmdir -v $vst3_dest_path/Surge.vst3/Contents/x86_64-linux $vst3_dest_path/Surge.vst3/Contents $vst3_dest_path/Surge.vst3
+    fi
+
+    if [ ! -z "$option_lv2" ]; then
+        rm -vf $lv2_dest_path/$lv2_bundle_name/$dest_plugin_name
+        rm -vf $lv2_dest_path/$lv2_bundle_name/*.ttl
+        test -d $lv2_dest_path/$lv2_bundle_name && rmdir $lv2_dest_path/$lv2_bundle_name
     fi
 
     if [ ! -z "$option_headless" ]; then
-        rm -vf $headless_dest_path/$dest_headless_name
+	rm -vf $headless_dest_path/$dest_headless_name/Surge/$dest_headless_name
+	rmdir -v $headless_dest_path/$dest_headless_name/Surge $headless_dest_path/$dest_headless_name	
     fi
 }
 
@@ -266,6 +292,10 @@ if [ -z "$option_project" ] || [ "$option_project" == "vst3" ]; then
     option_vst3=1
 fi
 
+if [ -z "$option_project" ] || [ "$option_project" == "lv2" ]; then
+    option_lv2=1
+fi
+
 if [ -z "$option_project" ] || [ "$option_project" == "headless" ]; then
     option_headless=1
 fi
@@ -274,6 +304,8 @@ if [ -z "$option_debug" ]; then
     config="config=release_x64"
     vst2_src_path="target/vst2/Release/Surge.so"
     vst3_src_path="products/Surge.vst3"
+    lv2_bundle_name="Surge.lv2"
+    lv2_src_path="target/lv2/Release/$lv2_bundle_name"
     headless_src_path="target/headless/Release/Surge"
     dest_plugin_name="Surge.so"
     dest_headless_name="Surge-Headless"
@@ -281,6 +313,8 @@ else
     config="config=debug_x64"
     vst2_src_path="target/vst2/Debug/Surge-Debug.so"
     vst3_src_path="target/vst3/Debug/Surge-Debug.so"
+    lv2_bundle_name="Surge.lv2"
+    lv2_src_path="target/lv2/Debug/$lv2_bundle_name"
     headless_src_path="target/headless/Debug/Surge-Debug"
     dest_plugin_name="Surge-Debug.so"
     dest_headless_name="Surge-Headless-Debug"
@@ -289,11 +323,13 @@ fi
 if [[ ! -z "$option_local" ]]; then
     vst2_dest_path="$HOME/.vst"
     vst3_dest_path="$HOME/.vst3"
+    lv2_dest_path="$HOME/.lv2"
     headless_dest_path="$HOME/bin"
     data_path="$HOME/.local/share/Surge"
 else
     vst2_dest_path="/usr/lib/vst"
     vst3_dest_path="/usr/lib/vst3"
+    lv2_dest_path="/usr/lib/lv2"
     headless_dest_path="/usr/bin"
     data_path="/usr/share/Surge"
 fi

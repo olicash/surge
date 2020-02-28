@@ -23,29 +23,33 @@
 #include "ConfigurationXml.h"
 #else
 #include <windows.h>
-#include <Shellapi.h>
-#include <Shlobj.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #endif
 
+#include <iostream>
+#include <iomanip>
 #include <sstream>
+
+#include "UserDefaults.h"
+
+#include "strnatcmp.h"
+
 
 float sinctable alignas(16)[(FIRipol_M + 1) * FIRipol_N * 2];
 float sinctable1X alignas(16)[(FIRipol_M + 1) * FIRipol_N];
 short sinctableI16 alignas(16)[(FIRipol_M + 1) * FIRipolI16_N];
 float table_dB alignas(16)[512],
-      table_pitch alignas(16)[512],
-      table_pitch_inv alignas(16)[512],
       table_envrate_lpf alignas(16)[512],
       table_envrate_linear alignas(16)[512];
-float table_note_omega alignas(16)[2][512];
 float waveshapers alignas(16)[8][1024];
-float samplerate, samplerate_inv;
+float samplerate = 0, samplerate_inv;
 double dsamplerate, dsamplerate_inv;
 double dsamplerate_os, dsamplerate_os_inv;
 
 using namespace std;
 
-SurgeStorage::SurgeStorage()
+SurgeStorage::SurgeStorage(std::string suppliedDataPath)
 {
    _patch.reset(new SurgePatch(this));
 
@@ -105,6 +109,8 @@ SurgeStorage::SurgeStorage()
    last_key[0] = 60;
    last_key[1] = 60;
    temposyncratio = 1.f;
+   temposyncratio_inv = 0.0f; // Use this as a sentinel (since it was not initialized prior to 1.6.5 this was the value at least win and mac had). #1444
+   
    songpos = 0;
 
    for (int i = 0; i < n_customcontrollers; i++)
@@ -120,6 +126,12 @@ SurgeStorage::SurgeStorage()
 
    memset(&audio_in[0][0], 0, 2 * BLOCK_SIZE_OS * sizeof(float));
 
+   bool hasSuppliedDataPath = false;
+   if(suppliedDataPath.size() != 0)
+   {
+       hasSuppliedDataPath = true;
+   }
+   
 #if MAC || LINUX
    const char* homePath = getenv("HOME");
    if (!homePath)
@@ -129,56 +141,122 @@ SurgeStorage::SurgeStorage()
 
 #if MAC
    char path[1024];
-   FSRef foundRef;
-   OSErr err = FSFindFolder(kUserDomain, kApplicationSupportFolderType, false, &foundRef);
-   // or kUserDomain
-   FSRefMakePath(&foundRef, (UInt8*)path, 1024);
-   datapath = path;
-   datapath += "/Surge/";
-
-   // check if the directory exist in the user domain (if it doesn't, fall back to the local domain)
-   CFStringRef testpathCF = CFStringCreateWithCString(0, datapath.c_str(), kCFStringEncodingUTF8);
-   CFURLRef testCat = CFURLCreateWithFileSystemPath(0, testpathCF, kCFURLPOSIXPathStyle, true);
-   CFRelease(testpathCF);
-   FSRef myfsRef;
-   Boolean works = CFURLGetFSRef(testCat, &myfsRef);
-   CFRelease(testCat); // don't need it anymore?!?
-   if (!works)
+   if (!hasSuppliedDataPath)
    {
-      OSErr err = FSFindFolder(kLocalDomain, kApplicationSupportFolderType, false, &foundRef);
-      FSRefMakePath(&foundRef, (UInt8*)path, 1024);
-      datapath = path;
-      datapath += "/Surge/";
-   }
+       FSRef foundRef;
+       OSErr err = FSFindFolder(kUserDomain, kApplicationSupportFolderType, false, &foundRef);
+       // or kUserDomain
+       FSRefMakePath(&foundRef, (UInt8*)path, 1024);
+       datapath = path;
+       datapath += "/Surge/";
 
+       auto cxmlpath = datapath + "configuration.xml";
+       // check if the directory exist in the user domain (if it doesn't, fall back to the local domain)
+       // See #863 where I chaned this to dir exists and contains config
+       CFStringRef testpathCF = CFStringCreateWithCString(0, cxmlpath.c_str(), kCFStringEncodingUTF8);
+       CFURLRef testCat = CFURLCreateWithFileSystemPath(0, testpathCF, kCFURLPOSIXPathStyle, true);
+       CFRelease(testpathCF);
+       FSRef myfsRef;
+       Boolean works = CFURLGetFSRef(testCat, &myfsRef);
+
+       CFRelease(testCat); // don't need it anymore?!?
+       if (!works)
+       {
+           OSErr err = FSFindFolder(kLocalDomain, kApplicationSupportFolderType, false, &foundRef);
+           FSRefMakePath(&foundRef, (UInt8*)path, 1024);
+           datapath = path;
+           datapath += "/Surge/";
+       }
+   }
+   else
+   {
+       datapath = suppliedDataPath;
+   }
+   
    // ~/Documents/Surge in full name
    sprintf(path, "%s/Documents/Surge", homePath);
    userDataPath = path;
 #elif LINUX
-   const char* xdgDataPath = getenv("XDG_DATA_HOME");
-   if (xdgDataPath)
-      datapath = std::string(xdgDataPath) + "/Surge/";
-   else
-      datapath = std::string(homePath) + "/.local/share/Surge/";
-
-   /*
-   ** If local directory doesn't exists - we probably came here through an installer -
-   ** use /usr/share/Surge as our last guess
-   */
-   if (! fs::is_directory(datapath))
+   if(!hasSuppliedDataPath)
    {
-      datapath = "/usr/share/Surge/";
+       const char* xdgDataPath = getenv("XDG_DATA_HOME");
+       if (xdgDataPath)
+           datapath = std::string(xdgDataPath) + "/Surge/";
+       else
+           datapath = std::string(homePath) + "/.local/share/Surge/";
+       
+       /*
+       ** If local directory doesn't exists - we probably came here through an installer -
+       ** use /usr/share/Surge as our last guess
+       */
+       if (! fs::is_directory(datapath))
+       {
+           datapath = "/usr/share/Surge/";
+       }
    }
-      
+   else
+   {
+       datapath = suppliedDataPath;
+   }
    
-   userDataPath = std::string(homePath) + "/Documents/Surge";
+   /* 
+   ** See the discussion in github issue #930. Basically
+   ** if ~/Documents/Surge exists use that
+   ** else if ~/.Surge exists use that
+   ** else if ~/.Documents exists, use ~/Documents/Surge
+   ** else use ~/.Surge
+   ** Compensating for whether your distro makes you a ~/Documents or not
+   */
+
+   std::string documentsSurge = std::string(homePath) + "/Documents/Surge";
+   std::string dotSurge = std::string(homePath) + "/.Surge";
+   std::string documents = std::string(homePath) + "/Documents/";
+
+   if( fs::is_directory(documentsSurge) )
+   { 
+      userDataPath = documentsSurge;
+   }
+   else if( fs::is_directory(dotSurge) )
+   {
+      userDataPath = dotSurge;
+   }
+   else if( fs::is_directory(documents) )
+   {
+      userDataPath = documentsSurge;
+   }
+   else
+   {
+      userDataPath = dotSurge;
+   }
+   //std::cout << "DataPath is " << datapath << std::endl;
+   //std::cout << "UserDataPath is " << userDataPath << std::endl;
+  
 #elif WINDOWS
-   PWSTR localAppData;
-   if (!SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData))
+#if TARGET_RACK
+   datapath = suppliedDataPath;
+#else
+   bool foundSurge = false;
+   PWSTR commonAppData;
+   if (!SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &commonAppData))
    {
       CHAR path[4096];
-      wsprintf(path, "%S\\Surge\\", localAppData);
+      wsprintf(path, "%S\\Surge\\", commonAppData);
       datapath = path;
+      if( fs::is_directory( fs::path( datapath ) ) )
+         foundSurge = true;
+      else
+         datapath = "";
+   }
+
+   if( ! foundSurge ) {
+      PWSTR localAppData;
+      if (!SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData))
+      {
+         CHAR path[4096];
+         wsprintf(path, "%S\\Surge\\", localAppData);
+         datapath = path;
+         foundSurge = true;
+      }
    }
 
    PWSTR documentsFolder;
@@ -189,7 +267,16 @@ SurgeStorage::SurgeStorage()
       userDataPath = path;
    }
 #endif
+#endif
 
+   userDefaultFilePath = userDataPath;
+   
+   std::string userSpecifiedDataPath = Surge::Storage::getUserDefaultValue(this, "userDataPath", "UNSPEC" );
+   if( userSpecifiedDataPath != "UNSPEC" )
+   {
+       userDataPath = userSpecifiedDataPath;
+   }
+   
 #if LINUX
    if (!snapshotloader.Parse((const char*)&configurationXmlStart, 0,
                              TIXML_ENCODING_UTF8)) {
@@ -216,13 +303,43 @@ SurgeStorage::SurgeStorage()
    }
 
    load_midi_controllers();
-   refresh_wtlist();
-   refresh_patchlist();
-   getPatch().scene[0].osc[0].wt.dt = 1.0f / 512.f;
-   load_wt(0, &getPatch().scene[0].osc[0].wt);
 
-   memset(&WindowWT, 0, sizeof(WindowWT));
-   load_wt_wt(datapath + "windows.wt", &WindowWT);
+#if !TARGET_RACK   
+   bool loadWtAndPatch = true;
+#if TARGET_LV2
+   // skip loading during export, it pops up an irrelevant error dialog
+   loadWtAndPatch = !skipLoadWtAndPatch;
+#endif
+   if (loadWtAndPatch)
+   {
+      refresh_wtlist();
+      refresh_patchlist();
+   }
+#endif
+   
+   getPatch().scene[0].osc[0].wt.dt = 1.0f / 512.f;
+   load_wt(0, &getPatch().scene[0].osc[0].wt, &getPatch().scene[0].osc[0]);
+
+   // WindowWT is a WaveTable which now has a constructor so don't do this
+   // memset(&WindowWT, 0, sizeof(WindowWT));
+   if( loadWtAndPatch && ! load_wt_wt(datapath + "windows.wt", &WindowWT) )
+   {
+      std::ostringstream oss;
+      oss << "Unable to load '" << datapath << "/windows.wt'. This file is required for surge to operate "
+          << "properly. This occurs when Surge is mis-installed and shared resources are not in the "
+          << "os-specific shared directory, which on your OS is a directory called 'Surge' in "
+#if MAC
+          << "the global or user local `Library/Application Support` directory."
+#endif
+#if WINDOWS
+          << "your %LocalAppData% directory."
+#endif
+#if LINUX
+          << "/usr/share or ~/.local/share."
+#endif
+          << " Please install shared assets correctly and restart.";
+      Surge::UserInteractions::promptError(oss.str(), "Unable to load windows.wt");
+   }
 }
 
 SurgePatch& SurgeStorage::getPatch()
@@ -272,8 +389,8 @@ void SurgeStorage::refresh_patchlist()
    auto patchCompare =
       [this](const int &i1, const int &i2) -> bool
       {
-         return _stricmp(patch_list[i1].name.c_str(),
-                         patch_list[i2].name.c_str()) < 0;
+         return strnatcasecmp(patch_list[i1].name.c_str(),
+                              patch_list[i2].name.c_str()) < 0;
       };
 
    std::sort(patchOrdering.begin(), patchOrdering.end(), patchCompare);
@@ -287,8 +404,8 @@ void SurgeStorage::refresh_patchlist()
    auto categoryCompare =
       [this](const int &i1, const int &i2) -> bool
       {
-         return _stricmp(patch_category[i1].name.c_str(),
-                         patch_category[i2].name.c_str()) < 0;
+         return strnatcasecmp(patch_category[i1].name.c_str(),
+                              patch_category[i2].name.c_str()) < 0;
       };
 
    int groups[4] = {0, firstThirdPartyCategory, firstUserCategory,
@@ -363,7 +480,7 @@ void SurgeStorage::refreshPatchOrWTListAddDir(bool userDir,
    for (auto &p : alldirs )
    {
       PatchCategory c;
-#if WINDOWS
+#if WINDOWS && ! TARGET_RACK
       /*
       ** Windows filesystem names are properly wstrings which, if we want them to 
       ** display properly in vstgui, need to be converted to UTF8 using the 
@@ -374,6 +491,7 @@ void SurgeStorage::refreshPatchOrWTListAddDir(bool userDir,
 #else
       c.name = p.generic_string().substr(patchpathSubstrLength);
 #endif
+      c.internalid = category;
 
       c.numberOfPatchesInCatgory = 0;
       for (auto& f : fs::directory_iterator(p))
@@ -384,7 +502,7 @@ void SurgeStorage::refreshPatchOrWTListAddDir(bool userDir,
             Patch e;
             e.category = category;
             e.path = f.path();
-#if WINDOWS
+#if WINDOWS && ! TARGET_RACK
               std::wstring str = f.path().filename().wstring();
               str = str.substr(0, str.size() - xtn.length());
               e.name = Surge::Storage::wstringToUTF8(str);
@@ -441,7 +559,7 @@ void SurgeStorage::refreshPatchOrWTListAddDir(bool userDir,
    auto catCompare =
        [this](const PatchCategory &c1, const PatchCategory &c2) -> bool
        {
-           return _stricmp(c1.name.c_str(),c2.name.c_str()) < 0;
+           return strnatcasecmp(c1.name.c_str(),c2.name.c_str()) < 0;
        };
    for (auto& pc : local_categories)
    {
@@ -510,15 +628,29 @@ void SurgeStorage::refresh_wtlist()
    wtCategoryOrdering = std::vector<int>(wt_category.size());
    std::iota(wtCategoryOrdering.begin(), wtCategoryOrdering.end(), 0);
 
+   // This nonsense deals with the fact that \ < ' ' but ' ' < / and we want "foo bar/h" and "foo/bar" to sort consistently on mac and win.
+   // See #1218
    auto categoryCompare = [this](const int& i1, const int& i2) -> bool {
-      return _stricmp(wt_category[i1].name.c_str(), wt_category[i2].name.c_str()) < 0;
+      auto n1 = wt_category[i1].name;
+      for( auto i=0; i<n1.length(); ++i)
+         if( n1[i] == '\\' )
+            n1[i] = '/';
+      
+      auto n2 = wt_category[i2].name;
+      for( auto i=0; i<n2.length(); ++i)
+         if( n2[i] == '\\' )
+            n2[i] = '/';
+
+      return strnatcasecmp(n1.c_str(), n2.c_str()) < 0;
    };
 
    int groups[4] = {0, firstThirdPartyWTCategory, firstUserWTCategory, (int)wt_category.size()};
 
    for (int i = 0; i < 3; i++)
+   {
       std::sort(std::next(wtCategoryOrdering.begin(), groups[i]),
                 std::next(wtCategoryOrdering.begin(), groups[i + 1]), categoryCompare);
+   }
 
    for (int i = 0; i < wt_category.size(); i++)
       wt_category[wtCategoryOrdering[i]].order = i;
@@ -526,7 +658,7 @@ void SurgeStorage::refresh_wtlist()
    wtOrdering = std::vector<int>();
 
    auto wtCompare = [this](const int& i1, const int& i2) -> bool {
-      return _stricmp(wt_list[i1].name.c_str(), wt_list[i2].name.c_str()) < 0;
+      return strnatcasecmp(wt_list[i1].name.c_str(), wt_list[i2].name.c_str()) < 0;
    };
 
    // Sort wavetables per category in the category order.
@@ -552,9 +684,7 @@ void SurgeStorage::refresh_wtlistAddDir(bool userDir, std::string subdir)
 {
    std::vector<std::string> supportedTableFileTypes;
    supportedTableFileTypes.push_back(".wt");
-#if WINDOWS
    supportedTableFileTypes.push_back(".wav");
-#endif
 
    refreshPatchOrWTListAddDir(
        userDir, subdir,
@@ -578,21 +708,21 @@ void SurgeStorage::perform_queued_wtloads()
       {
          if (patch.scene[sc].osc[o].wt.queue_id != -1)
          {
-            load_wt(patch.scene[sc].osc[o].wt.queue_id, &patch.scene[sc].osc[o].wt);
+            load_wt(patch.scene[sc].osc[o].wt.queue_id, &patch.scene[sc].osc[o].wt, &patch.scene[sc].osc[o]);
             patch.scene[sc].osc[o].wt.refresh_display = true;
          }
          else if (patch.scene[sc].osc[o].wt.queue_filename[0])
          {
             patch.scene[sc].osc[o].queue_type = ot_wavetable;
             patch.scene[sc].osc[o].wt.current_id = -1;
-            load_wt(patch.scene[sc].osc[o].wt.queue_filename, &patch.scene[sc].osc[o].wt);
+            load_wt(patch.scene[sc].osc[o].wt.queue_filename, &patch.scene[sc].osc[o].wt, &patch.scene[sc].osc[o]);
             patch.scene[sc].osc[o].wt.refresh_display = true;
          }
       }
    }
 }
 
-void SurgeStorage::load_wt(int id, Wavetable* wt)
+void SurgeStorage::load_wt(int id, Wavetable* wt, OscillatorStorage *osc)
 {
    wt->current_id = id;
    wt->queue_id = -1;
@@ -602,28 +732,53 @@ void SurgeStorage::load_wt(int id, Wavetable* wt)
       return;
    if (!wt)
       return;
-   load_wt(wt_list[id].path.generic_string(), wt);
+
+   load_wt(wt_list[id].path.generic_string(), wt, osc);
+
+   if( osc )
+   {
+      auto n = wt_list.at(id).name;
+      strncpy( osc->wavetable_display_name, n.c_str(), 256 );
+   }
 }
 
-void SurgeStorage::load_wt(string filename, Wavetable* wt)
+void SurgeStorage::load_wt(string filename, Wavetable* wt, OscillatorStorage *osc)
 {
+   if( osc )
+   {
+      char sep = '/';
+#if WINDOWS
+      sep = '\\';
+#endif
+      auto fn = filename.substr(filename.find_last_of(sep) + 1, filename.npos);
+      std::string fnnoext = fn.substr( 0, fn.find_last_of('.' ) );
+      
+      if( fnnoext.length() > 0 )
+      {
+         strncpy( osc->wavetable_display_name, fnnoext.c_str(), 256 );
+      }
+   }
    wt->queue_filename[0] = 0;
    string extension = filename.substr(filename.find_last_of('.'), filename.npos);
    for (unsigned int i = 0; i < extension.length(); i++)
       extension[i] = tolower(extension[i]);
    if (extension.compare(".wt") == 0)
       load_wt_wt(filename, wt);
-#if !MAC
    else if (extension.compare(".wav") == 0)
-      load_wt_wav(filename, wt);
-#endif
+      load_wt_wav_portable(filename, wt);
+   else
+   {
+       std::ostringstream oss;
+       oss << "Unable to load file with extension '" << extension << "'. Surge only supports .wav and .wt files";
+       Surge::UserInteractions::promptError(oss.str(), "load_wt error" );
+   }
 }
 
-void SurgeStorage::load_wt_wt(string filename, Wavetable* wt)
+bool SurgeStorage::load_wt_wt(string filename, Wavetable* wt)
 {
    FILE* f = fopen(filename.c_str(), "rb");
    if (!f)
-      return;
+      return false;
    wt_header wh;
    memset(&wh, 0, sizeof(wt_header));
 
@@ -634,7 +789,7 @@ void SurgeStorage::load_wt_wt(string filename, Wavetable* wt)
    {
       // SOME sort of error reporting is appropriate
       fclose(f);
-      return;
+      return false;
    }
 
    void* data;
@@ -647,11 +802,27 @@ void SurgeStorage::load_wt_wt(string filename, Wavetable* wt)
    data = malloc(ds);
    fread(data, 1, ds, f);
    CS_WaveTableData.enter();
-   wt->BuildWT(data, wh, false);
+   bool wasBuilt = wt->BuildWT(data, wh, false);
    CS_WaveTableData.leave();
    free(data);
 
+   if (!wasBuilt)
+   {
+       std::ostringstream oss;
+       oss << "Your wavetable was unable to build. This often means that it has too many samples or tables."
+           << " You provided " << wh.n_tables << " tables of size " << wh.n_samples << " vs max limits of "
+           << max_subtables << " tables and " << max_wtable_size << " samples."
+           << " In some cases, Surge detects this situation inconsistently leading to this message. Surge is now"
+           << " in a potentially inconsistent state. We recommend you restart Surge and do not load the wavetable again."
+           << " If you would like, please attach the wavetable which caused this message to a new github issue at "
+           << " https://github.com/surge-synthesizer/surge/";
+       Surge::UserInteractions::promptError( oss.str(),
+                                             "Software Error on WT Load" );
+       fclose(f);
+       return false;
+   }
    fclose(f);
+   return true;
 }
 int SurgeStorage::get_clipboard_type()
 {
@@ -1009,16 +1180,21 @@ double shafted_tanh(double x)
 
 void SurgeStorage::init_tables()
 {
+   isStandardTuning = true;
    float db60 = powf(10.f, 0.05f * -60.f);
    for (int i = 0; i < 512; i++)
    {
       table_dB[i] = powf(10.f, 0.05f * ((float)i - 384.f));
       table_pitch[i] = powf(2.f, ((float)i - 256.f) * (1.f / 12.f));
+      table_pitch_ignoring_tuning[i] = table_pitch[i];
       table_pitch_inv[i] = 1.f / table_pitch[i];
+      table_pitch_inv_ignoring_tuning[i] = table_pitch_inv[i];
       table_note_omega[0][i] =
           (float)sin(2 * M_PI * min(0.5, 440 * table_pitch[i] * dsamplerate_os_inv));
       table_note_omega[1][i] =
           (float)cos(2 * M_PI * min(0.5, 440 * table_pitch[i] * dsamplerate_os_inv));
+      table_note_omega_ignoring_tuning[0][i] = table_note_omega[0][i];
+      table_note_omega_ignoring_tuning[1][i] = table_note_omega[1][i];
       double k = dsamplerate_os * pow(2.0, (((double)i - 256.0) / 16.0)) / (double)BLOCK_SIZE_OS;
       table_envrate_lpf[i] = (float)(1.f - exp(log(db60) / k));
       table_envrate_linear[i] = (float)1.f / k;
@@ -1053,7 +1229,7 @@ void SurgeStorage::init_tables()
    vu_falloff = 0.997f; // TODO should be samplerate-dependent (this is per 32-sample block at 44.1)
 }
 
-float note_to_pitch(float x)
+float SurgeStorage::note_to_pitch(float x)
 {
    x += 256;
    int e = (int)x;
@@ -1065,7 +1241,7 @@ float note_to_pitch(float x)
    return (1 - a) * table_pitch[e & 0x1ff] + a * table_pitch[(e + 1) & 0x1ff];
 }
 
-float note_to_pitch_inv(float x)
+float SurgeStorage::note_to_pitch_inv(float x)
 {
    x += 256;
    int e = (int)x;
@@ -1077,7 +1253,31 @@ float note_to_pitch_inv(float x)
    return (1 - a) * table_pitch_inv[e & 0x1ff] + a * table_pitch_inv[(e + 1) & 0x1ff];
 }
 
-void note_to_omega(float x, float& sinu, float& cosi)
+float SurgeStorage::note_to_pitch_ignoring_tuning(float x)
+{
+   x += 256;
+   int e = (int)x;
+   float a = x - (float)e;
+
+   if (e > 0x1fe)
+      e = 0x1fe;
+
+   return (1 - a) * table_pitch_ignoring_tuning[e & 0x1ff] + a * table_pitch_ignoring_tuning[(e + 1) & 0x1ff];
+}
+
+float SurgeStorage::note_to_pitch_inv_ignoring_tuning(float x)
+{
+   x += 256;
+   int e = (int)x;
+   float a = x - (float)e;
+
+   if (e > 0x1fe)
+      e = 0x1fe;
+
+   return (1 - a) * table_pitch_inv_ignoring_tuning[e & 0x1ff] + a * table_pitch_inv_ignoring_tuning[(e + 1) & 0x1ff];
+}
+
+void SurgeStorage::note_to_omega(float x, float& sinu, float& cosi)
 {
    x += 256;
    int e = (int)x;
@@ -1090,6 +1290,21 @@ void note_to_omega(float x, float& sinu, float& cosi)
 
    sinu = (1 - a) * table_note_omega[0][e & 0x1ff] + a * table_note_omega[0][(e + 1) & 0x1ff];
    cosi = (1 - a) * table_note_omega[1][e & 0x1ff] + a * table_note_omega[1][(e + 1) & 0x1ff];
+}
+
+void SurgeStorage::note_to_omega_ignoring_tuning(float x, float& sinu, float& cosi)
+{
+   x += 256;
+   int e = (int)x;
+   float a = x - (float)e;
+
+   if (e > 0x1fe)
+      e = 0x1fe;
+   else if (e < 0)
+      e = 0;
+
+   sinu = (1 - a) * table_note_omega_ignoring_tuning[0][e & 0x1ff] + a * table_note_omega_ignoring_tuning[0][(e + 1) & 0x1ff];
+   cosi = (1 - a) * table_note_omega_ignoring_tuning[1][e & 0x1ff] + a * table_note_omega_ignoring_tuning[1][(e + 1) & 0x1ff];
 }
 
 float db_to_linear(float x)
@@ -1146,6 +1361,207 @@ float envelope_rate_linear(float x)
 
    return (1 - a) * table_envrate_linear[e & 0x1ff] + a * table_envrate_linear[(e + 1) & 0x1ff];
 }
+
+bool SurgeStorage::retuneToScale(const Surge::Storage::Scale& s)
+{
+   if (!s.isValid())
+      return false;
+
+   currentScale = s;
+   isStandardTuning = false;
+   
+   float pitches[512];
+   int posPitch0 = 256 + scaleConstantNote();
+   int posScale0 = 256 + currentMapping.middleNote;
+   float pitchMod = log(scaleConstantPitch())/log(2) - 1;
+
+   int scalePositionOfStartNote = 0;
+   int scalePositionOfTuningNote = currentMapping.tuningConstantNote - currentMapping.middleNote;
+   if( currentMapping.count > 0 )
+      scalePositionOfTuningNote = currentMapping.keys[scalePositionOfTuningNote];
+
+   float tuningCenterPitchOffset;
+   if( scalePositionOfTuningNote == 0 )
+      tuningCenterPitchOffset = 0;
+   else
+   {
+      float tshift = 0;
+      float dt = s.tones[s.count -1].floatValue - 1.0;
+
+      while( scalePositionOfTuningNote < 0 )
+      {
+         scalePositionOfTuningNote += s.count;
+         tshift += dt;
+      }
+      while( scalePositionOfTuningNote > s.count )
+      {
+         scalePositionOfTuningNote -= s.count;
+         tshift -= dt;
+      }
+      
+      if( scalePositionOfTuningNote == 0 )
+         tuningCenterPitchOffset = -tshift;
+      else
+         tuningCenterPitchOffset = s.tones[scalePositionOfTuningNote-1].floatValue - 1.0 - tshift;
+   }
+
+   pitches[posPitch0] = 1.0;
+   for (int i=0; i<512; ++i)
+   {
+      // TODO: ScaleCenter and PitchCenter are now two different notes.
+       int distanceFromPitch0 = i - posPitch0;
+       int distanceFromScale0 = i - posScale0;
+       
+       if( distanceFromPitch0 == 0 )
+       {
+          table_pitch[i] = pow( 2.0, pitches[i] + pitchMod );
+#if DEBUG_SCALES
+           if( i > 296 && i < 340 )
+               std::cout << "PITCH: i=" << i << " n=" << i - 256 
+                         << " p=" << pitches[i]
+                         << " tp=" << table_pitch[i]
+                         << " fr=" << table_pitch[i] * 8.175798915
+                         << std::endl;
+#endif           
+       }
+       else 
+       {
+          /*
+            We used to have this which assumed 1-12
+            Now we have our note number, our distance from the 
+            center note, and the key remapping
+           int rounds = (distanceFromScale0-1) / s.count;
+           int thisRound = (distanceFromScale0-1) % s.count;
+          */
+
+          int rounds;
+          int thisRound;
+          int disable = false;
+          if( currentMapping.isStandardMapping || ( currentMapping.count == 0 ) )
+          {
+             rounds = (distanceFromScale0-1) / s.count;
+             thisRound = (distanceFromScale0-1) % s.count;
+          }
+          else
+          {
+             /*
+             ** Now we have this situation. We are at note i so we
+             ** are m away from the center note which is distanceFromScale0
+             **
+             ** If we mod that by the mapping size we know which note we are on
+             */
+             int mappingKey = distanceFromScale0 % currentMapping.count;
+             if( mappingKey < 0 )
+                mappingKey += currentMapping.count;
+             int cm = currentMapping.keys[mappingKey];
+             int push = 0;
+             if( cm < 0 )
+             {
+                disable = true;
+             }
+             else
+             {
+                push = mappingKey - cm;
+             }
+             rounds = (distanceFromScale0 - push - 1) / s.count;
+             thisRound = (distanceFromScale0 - push - 1) % s.count;
+#ifdef DEBUG_SCALES
+             if( i > 296 && i < 340 )
+                std::cout << "MAPPING n=" << i - 256 << " pushes ds0=" << distanceFromScale0 << " cmc=" << currentMapping.count << " tr=" << thisRound << " r=" << rounds << " mk=" << mappingKey << " cm=" << cm << " push=" << push << " dis=" << disable << " mk-p-1=" << mappingKey - push - 1 << std::endl;
+#endif
+             
+
+          }
+
+           if( thisRound < 0 )
+           {
+               thisRound += s.count;
+               rounds -= 1;
+           }
+           float mul = pow( s.tones[s.count-1].floatValue, rounds);
+           if( disable )
+              pitches[i] = 0;
+           else
+              pitches[i] = s.tones[thisRound].floatValue + rounds * (s.tones[s.count - 1].floatValue - 1.0) - tuningCenterPitchOffset;
+           
+           float otp = table_pitch[i];
+           table_pitch[i] = pow( 2.0, pitches[i] + pitchMod );
+
+#if DEBUG_SCALES
+           if( i > 296 && i < 340 )
+               std::cout << "PITCH: i=" << i << " n=" << i - 256
+                         << " ds0=" << distanceFromScale0 
+                         << " dp0=" << distanceFromPitch0
+                         << " r=" << rounds << " t=" << thisRound
+                         << " p=" << pitches[i]
+                         << " t=" << s.tones[thisRound].floatValue << " " << s.tones[thisRound ]
+                         << " dis=" << disable
+                         << " tp=" << table_pitch[i]
+                         << " fr=" << table_pitch[i] * 8.175798915
+                         << " otp=" << otp
+                         << " tcpo=" << tuningCenterPitchOffset
+                         << " diff=" << table_pitch[i] - otp
+                         
+                   //<< " l2p=" << log(otp)/log(2.0)
+                   //<< " l2p-p=" << log(otp)/log(2.0) - pitches[i] - rounds - 3
+                         << std::endl;
+#endif           
+       }
+   }
+   
+   for( int i=0; i<512; ++i )
+   {
+      table_pitch_inv[i] = 1.f / table_pitch[i];
+      table_note_omega[0][i] =
+          (float)sin(2 * M_PI * min(0.5, 440 * table_pitch[i] * dsamplerate_os_inv));
+      table_note_omega[1][i] =
+          (float)cos(2 * M_PI * min(0.5, 440 * table_pitch[i] * dsamplerate_os_inv));
+
+   }
+
+   return true;
+}
+
+bool SurgeStorage::remapToStandardKeyboard()
+{
+   return remapToKeyboard(Surge::Storage::KeyboardMapping());
+}
+
+bool SurgeStorage::remapToKeyboard(const Surge::Storage::KeyboardMapping& k)
+{
+   currentMapping = k;
+   isStandardMapping = k.isStandardMapping;
+   if( isStandardMapping )
+   {
+      tuningPitch = 32.0;
+      tuningPitchInv = 1.0 / 32.0;
+   }
+   else
+   {
+      tuningPitch = k.tuningFrequency / 8.175798915;
+      tuningPitchInv = 1.0 / tuningPitch;
+   }
+   // The mapping will change all the cached pitches so we need to redo
+   if( isStandardMapping && isStandardTuning )
+   {
+      retuneToStandardTuning();
+   }
+   else if( !isStandardMapping && !currentScale.isValid() )
+   {
+      // We need to set the current scale to a default scale so we can remap the keyboard.
+      // This is an odd edge case but we do need to support it.
+      retuneToScale(Surge::Storage::Scale::evenTemperament12NoteScale());
+   }
+   else
+   {
+      retuneToScale(currentScale);
+   }
+   return true;
+}
+
+#if TARGET_LV2
+bool SurgeStorage::skipLoadWtAndPatch = false;
+#endif
 
 namespace Surge
 {

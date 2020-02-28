@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(Surge VERSION 1.0.0 LANGUAGES CXX ASM)
+#set(CMAKE_BUILD_TYPE Debug)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
+find_package(LibMidiFile ${PACKAGE_OPTIONS})
 
 set(SURGE_COMMON_SOURCES
     src/common/dsp/effect/ConditionerEffect.cpp
@@ -39,18 +41,18 @@ set(SURGE_COMMON_SOURCES
     src/common/vt_dsp/macspecific.cpp
     src/common/Parameter.cpp
     src/common/precompiled.cpp
-    src/common/Sample.cpp
-    src/common/SampleLoadRiffWave.cpp
     src/common/SurgeError.cpp
     src/common/SurgePatch.cpp
     src/common/SurgeStorage.cpp
-    src/common/SurgeStorageLoadWavetable.cpp
     src/common/SurgeSynthesizer.cpp
     src/common/SurgeSynthesizerIO.cpp
+    src/common/Tunings.cpp
     src/common/UserDefaults.cpp
+    src/common/WavSupport.cpp 
     libs/xml/tinyxml.cpp
     libs/xml/tinyxmlerror.cpp
     libs/xml/tinyxmlparser.cpp
+    libs/strnatcmp/strnatcmp.cpp
     libs/filesystem/filesystem.cpp
 )
 
@@ -58,23 +60,29 @@ set(SURGE_COMMON_INCLUDES
     libs/
     libs/filesystem
     libs/xml
+    libs/catch2
+    libs/strnatcmp
     src/common
     src/common/dsp
-    src/common/gui
     src/common/thread
     src/common/vt_dsp
-    vst3sdk
-    vstgui.surge
 )
 
 add_executable(surge-headless
     ${SURGE_COMMON_SOURCES}
+    ${LIB_MIDIFILE_SOURCES}
    src/headless/main.cpp
-   src/headless/DisplayInfoHeadless.cpp
    src/headless/UserInteractionsHeadless.cpp
    src/headless/LinkFixesHeadless.cpp
    src/headless/HeadlessUtils.cpp
    src/headless/Player.cpp
+   src/headless/UnitTests.cpp
+   src/headless/UnitTestUtilities.cpp    
+   src/headless/UnitTestsDSP.cpp
+   src/headless/UnitTestsIO.cpp
+   src/headless/UnitTestsMIDI.cpp
+   src/headless/UnitTestsMOD.cpp
+   src/headless/UnitTestsTUN.cpp
 )
 
 target_compile_features(surge-headless
@@ -85,11 +93,13 @@ target_compile_features(surge-headless
 target_compile_definitions(surge-headless
     PRIVATE
         TARGET_HEADLESS=1
+        LIBMIDIFILE=1
 )
 
 target_include_directories(surge-headless
     PRIVATE
         ${SURGE_COMMON_INCLUDES}
+        ${LIB_MIDIFILE_INCLUDES}
         src/headless
 )
 
@@ -174,4 +184,22 @@ if (UNIX AND NOT APPLE)
         stdc++fs
         Threads::Threads
     )
+endif()
+
+if (WIN32)
+    target_compile_definitions(surge-headless
+        PRIVATE
+            WINDOWS=1
+            NOMINMAX=1
+    )
+
+    target_compile_options(surge-headless
+        PRIVATE
+            /arch:SSE2
+            "/FI precompiled.h"
+            /Zc:alignedNew
+            /bigobj
+    )
+
+    target_link_libraries(surge-headless winmm.lib)
 endif()

@@ -144,7 +144,7 @@ ComponentResult aulayer::Initialize()
    blockpos = 0;
    events_this_block = 0;
    // init parameters
-   for (UInt32 i = 0; i < n_total_params; i++)
+   for (UInt32 i = 0; i < n_total_params + num_metaparameters; i++)
    {
       parameterIDlist[i] = i;
       parameterIDlist_CFString[i] = 0;
@@ -194,9 +194,12 @@ ComponentResult aulayer::Reset(AudioUnitScope inScope, AudioUnitElement inElemen
    if ((inScope == kAudioUnitScope_Global) && (inElement == 0) && plugin_instance)
    {
       double samplerate = GetOutput(0)->GetStreamFormat().mSampleRate;
-      plugin_instance->setSamplerate(samplerate);
+      if( samplerate != sampleRateCache )
+      {
+          plugin_instance->setSamplerate(samplerate);
+          sampleRateCache = samplerate;
+      }
       plugin_instance->allNotesOff();
-      sampleRateCache == samplerate;
    }
    return noErr;
 }
@@ -395,6 +398,16 @@ ComponentResult aulayer::Render(AudioUnitRenderActionFlags& ioActionFlags,
       plugin_instance->time_data.tempo = 120;
    }
 
+   UInt32 oDS;
+   Float32 otsNum;
+   UInt32 otsDen;
+   Float64 ocmD;
+   if( CallHostMusicalTimeLocation(&oDS, &otsNum, &otsDen, &ocmD ) >= 0 )
+   {
+      plugin_instance->time_data.timeSigNumerator = (int)otsNum;
+      plugin_instance->time_data.timeSigDenominator = (int)otsDen;
+   }
+
    unsigned int events_processed = 0;
 
    unsigned int i;
@@ -525,6 +538,10 @@ ComponentResult aulayer::RestoreState(CFPropertyListRef plist)
       p = CFDataGetBytePtr(data);
       size_t psize = CFDataGetLength(data);
       plugin_instance->loadRaw(p, psize, false);
+
+      plugin_instance->loadFromDawExtraState();
+      if( editor_instance )
+          editor_instance->loadFromDAWExtraState(plugin_instance);
    }
    return noErr;
 }
@@ -545,11 +562,17 @@ ComponentResult aulayer::SaveState(CFPropertyListRef* plist)
 
    CFMutableDictionaryRef dict = (CFMutableDictionaryRef)*plist;
    void* data;
+   
+   plugin_instance->populateDawExtraState();
+   if( editor_instance )
+       editor_instance->populateDawExtraState(plugin_instance);
+   
    CFIndex size = plugin_instance->saveRaw(&data);
    CFDataRef dataref =
        CFDataCreateWithBytesNoCopy(NULL, (const UInt8*)data, size, kCFAllocatorNull);
    CFDictionarySetValue(dict, rawchunkname, dataref);
    CFRelease(dataref);
+
    return noErr;
 }
 
@@ -624,9 +647,9 @@ ComponentResult aulayer::GetParameterList(AudioUnitScope inScope,
       return noErr;
    }
 
-   outNumParameters = n_total_params;
+   outNumParameters = n_total_params + num_metaparameters;
    if (outParameterList)
-      memcpy(outParameterList, parameterIDlist, sizeof(AudioUnitParameterID) * n_total_params);
+      memcpy(outParameterList, parameterIDlist, sizeof(AudioUnitParameterID) * ( n_total_params + num_metaparameters ));
    return noErr;
 }
 
@@ -687,7 +710,7 @@ ComponentResult aulayer::GetParameter(AudioUnitParameterID inID,
 {
    if (inScope != kAudioUnitScope_Global)
       return kAudioUnitErr_InvalidParameter;
-   if (inID >= n_total_params)
+   if (inID >= n_total_params + num_metaparameters)
       return kAudioUnitErr_InvalidParameter;
    if (!IsInitialized())
       return kAudioUnitErr_Uninitialized;
@@ -705,7 +728,7 @@ ComponentResult aulayer::SetParameter(AudioUnitParameterID inID,
 {
    if (inScope != kAudioUnitScope_Global)
       return kAudioUnitErr_InvalidParameter;
-   if (inID >= n_total_params)
+   if (inID >= n_total_params + num_metaparameters)
       return kAudioUnitErr_InvalidParameter;
    if (!IsInitialized())
       return kAudioUnitErr_Uninitialized;
@@ -728,7 +751,7 @@ bool aulayer::ParameterBeginEdit(int p)
    AudioUnitEvent event;
    event.mEventType = kAudioUnitEvent_BeginParameterChangeGesture;
    event.mArgument.mParameter.mAudioUnit = GetComponentInstance();
-   event.mArgument.mParameter.mParameterID = p;
+   event.mArgument.mParameter.mParameterID = plugin_instance->remapInternalToExternalApiId(p);
    event.mArgument.mParameter.mScope = kAudioUnitScope_Global;
    event.mArgument.mParameter.mElement = 0;
    AUEventListenerNotify(NULL, NULL, &event);
@@ -742,7 +765,7 @@ bool aulayer::ParameterEndEdit(int p)
    AudioUnitEvent event;
    event.mEventType = kAudioUnitEvent_EndParameterChangeGesture;
    event.mArgument.mParameter.mAudioUnit = GetComponentInstance();
-   event.mArgument.mParameter.mParameterID = p;
+   event.mArgument.mParameter.mParameterID = plugin_instance->remapInternalToExternalApiId(p);
    event.mArgument.mParameter.mScope = kAudioUnitScope_Global;
    event.mArgument.mParameter.mElement = 0;
    AUEventListenerNotify(NULL, NULL, &event);
@@ -753,17 +776,13 @@ bool aulayer::ParameterEndEdit(int p)
 
 bool aulayer::ParameterUpdate(int p)
 {
-   // AUParameterChange_TellListeners(GetComponentInstance(), p);
-   // set up an AudioUnitParameter structure with all of the necessary values
-   AudioUnitParameter dirtyParam;
-   memset(&dirtyParam, 0, sizeof(dirtyParam)); // zero out the struct
-   dirtyParam.mAudioUnit = GetComponentInstance();
-   dirtyParam.mParameterID = p;
-   dirtyParam.mScope = kAudioUnitScope_Global;
-   dirtyParam.mElement = 0;
-
-   AUParameterListenerNotify(NULL, NULL, &dirtyParam);
-
+   AudioUnitEvent event;
+   event.mEventType = kAudioUnitEvent_ParameterValueChange;
+   event.mArgument.mParameter.mAudioUnit = GetComponentInstance();
+   event.mArgument.mParameter.mParameterID = plugin_instance->remapInternalToExternalApiId(p);
+   event.mArgument.mParameter.mScope = kAudioUnitScope_Global;
+   event.mArgument.mParameter.mElement = 0;
+   AUEventListenerNotify(NULL, NULL, &event);
    return true;
 }
 

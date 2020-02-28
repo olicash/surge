@@ -305,10 +305,8 @@ bool Vst2PluginInstance::getProgramNameIndexed (VstInt32 category, VstInt32 inde
    if (tryInit())
    {
        SurgeSynthesizer* s = (SurgeSynthesizer*)_instance;
-       /*
-       ** The original surge had this 63. Presume it is documented somewhere in vst land.
-       */
-       strncpy(text, s->storage.getPatch().name.c_str(), 63);
+       strncpy(text, s->storage.getPatch().name.c_str(), kVstMaxProgNameLen);
+       text[kVstMaxProgNameLen - 1] = '\0';
    }
    return true;
 }
@@ -396,6 +394,11 @@ void Vst2PluginInstance::processT(float** inputs, float** outputs, VstInt32 samp
       {
          if (timeinfo->flags & kVstPpqPosValid)
             _instance->time_data.ppqPos = timeinfo->ppqPos;
+      }
+      if (timeinfo->flags & kVstTimeSigValid )
+      {
+         _instance->time_data.timeSigNumerator = timeinfo->timeSigNumerator;
+         _instance->time_data.timeSigDenominator = timeinfo->timeSigDenominator;
       }
    }
    else
@@ -511,6 +514,10 @@ VstInt32 Vst2PluginInstance::getChunk(void** data, bool isPreset)
    if (!tryInit())
       return 0;
 
+   _instance->populateDawExtraState();
+   if( editor )
+       ((SurgeGUIEditor *)editor)->populateDawExtraState(_instance);
+
    return _instance->saveRaw(data);
    //#endif
 }
@@ -524,6 +531,10 @@ VstInt32 Vst2PluginInstance::setChunk(void* data, VstInt32 byteSize, bool isPres
       return 0;
 
    _instance->loadRaw(data, byteSize, false);
+
+   _instance->loadFromDawExtraState();
+   if( editor )
+       ((SurgeGUIEditor *)editor)->loadFromDAWExtraState(_instance);
 
    return 1;
 }
@@ -582,14 +593,10 @@ bool Vst2PluginInstance::tryInit()
 void Vst2PluginInstance::handleZoom(SurgeGUIEditor *e)
 {
     ERect *vr;
-    int newW, newH;
-    if (e->getRect(&vr))
-    {
-        float fzf = e->getZoomFactor() / 100.0;
-        newW = (vr->right - vr->left) * fzf;
-        newH = (vr->bottom - vr->top) * fzf;
-        sizeWindow( newW, newH );
-    }
+    float fzf = e->getZoomFactor() / 100.0;
+    int newW = WINDOW_SIZE_X * fzf;
+    int newH = WINDOW_SIZE_Y * fzf;
+    sizeWindow( newW, newH );
 
     VSTGUI::CFrame *frame = e->getFrame();
     if(frame)

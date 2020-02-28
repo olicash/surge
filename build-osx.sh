@@ -40,6 +40,9 @@ Commands are:
         --build-install-vst3     Build and install only the VST3
         --build-headless         Build the headless application
 
+        --get-and-build-fx       Get and build the surge-fx project. This is only needed if you
+                                 want to make a release with that asset included
+
         --package                Creates a .pkg file from current built state in products
         --clean-and-package      Cleans everything; runs all the builds; makes an installer; drops it in products
                                  Equivalent of running --clean-all then --build then --package
@@ -48,6 +51,13 @@ Commands are:
         --clean-all              Clean all the builds and remove the xcode files and target directories
 
         --uninstall-surge        Uninstall surge both from user and system areas. Be very careful!
+
+We also have a few useful defaults to run in a DAW if you have the DAW installed. Your favorite dev combo
+not listed here? Feel free to add one and send in a Pull Request!
+
+        --run-hosting-au         Run the Audio Unit in Hosting AU
+        --run-logic-au           Run the Audio Unit in Logic Pro X
+        --run-reaper-vst3        Run the VST3 in Reaper64
 
 The default behaviour without arguments is to clean and rebuild everything.
 
@@ -116,7 +126,15 @@ prerequisite_check()
 
 run_premake()
 {
-    premake5 xcode4
+    if [[ -z $SURGE_PREMAKE ]]; then
+        premake5 xcode4
+    else
+        echo
+        echo ${RED}Using custom premake binary${NC}
+        echo $SURGE_PREMAKE
+        echo
+        $SURGE_PREMAKE xcode4
+    fi 
     touch Surge.xcworkspace/premake-stamp
 }
 
@@ -264,6 +282,42 @@ run_build_validate_au()
     auval -vt aumu VmbA
 }
 
+run_hosting_au()
+{
+    if [ ! -d "/Applications/Hosting AU.app" ]; then
+        echo
+        echo "Hosting AU is not installed. Please install it from http://ju-x.com/hostingau.html"
+        echo
+        exit 1;
+    fi
+
+    "/Applications/Hosting AU.app/Contents/MacOS/Hosting AU" "test-data/daw-files/mac/Surge.hosting"
+}
+
+run_logic_au()
+{
+    if [ ! -d "/Applications/Logic Pro X.app" ]; then
+        echo
+        echo "Logic is not installed. Please install it!"
+        echo
+        exit 1;
+    fi
+
+    "/Applications/Logic Pro X.app/Contents/MacOS/Logic Pro X" "test-data/daw-files/mac/Surge_AU.logicx"
+}
+
+run_reaper_vst3()
+{
+    if [ ! -d "/Applications/REAPER64.app" ]; then
+        echo
+        echo "REAPER64 is not installed. Please install it!"
+        echo
+        exit 1;
+    fi
+
+    "/Applications/REAPER64.app/Contents/MacOS/REAPER" "test-data/daw-files/mac/Surge_VST3.RPP"
+}
+
 run_build_install_vst2()
 {
     run_premake_if
@@ -305,7 +359,7 @@ run_clean_all()
     run_clean_builds
 
     echo "Cleaning additional assets (directories, XCode, etc)"
-    rm -rf Surge.xcworkspace *xcodeproj target products build_logs obj build
+    rm -rf Surge.xcworkspace *xcodeproj target products build_logs obj build fxbuild
 }
 
 run_uninstall_surge()
@@ -336,6 +390,21 @@ run_package()
     echo
     echo "Have a lovely day!"
     echo
+}
+
+get_and_build_fx()
+{
+    set -x
+    mkdir -p fxbuild
+    mkdir -p products
+    cd fxbuild
+    git clone https://github.com/surge-synthesizer/surge-fx
+    cd surge-fx
+    git submodule update --init --recursive
+    make -f Makefile.mac build
+    cd Builds/MacOSX/build/Release
+    tar cf - SurgeEffectsBank.component/* | ( cd ../../../../../../products ; tar xf - )
+    tar cf - SurgeEffectsBank.vst3/* | ( cd   ../../../../../../products ; tar xf - )
 }
 
 # This is the main section of the script
@@ -373,6 +442,18 @@ case $command in
     --build-validate-au)
         run_build_validate_au
         ;;
+    --run-hosting-au)
+        run_build_validate_au
+        run_hosting_au
+        ;;
+    --run-logic-au)
+        run_build_validate_au
+        run_logic_au
+        ;;
+    --run-reaper-vst3)
+        run_build_install_vst3
+        run_reaper_vst3
+        ;;
     --build-install-vst2)
         run_build_install_vst2
         ;;
@@ -402,6 +483,9 @@ case $command in
         ;;
     --uninstall-surge)
         run_uninstall_surge
+        ;;
+    --get-and-build-fx)
+        get_and_build_fx
         ;;
     "")
         default_action

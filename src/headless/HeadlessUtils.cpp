@@ -12,11 +12,15 @@ namespace Surge
 {
 namespace Headless
 {
-SurgeSynthesizer* createSurge(int sr)
+static std::unique_ptr<HeadlessPluginLayerProxy> parent = nullptr;
+std::shared_ptr<SurgeSynthesizer> createSurge(int sr)
 {
-   HeadlessPluginLayerProxy* parent = new HeadlessPluginLayerProxy();
-   SurgeSynthesizer* surge = new SurgeSynthesizer(parent);
+   if (parent.get()==nullptr)
+      parent.reset(new HeadlessPluginLayerProxy());
+   auto surge = std::shared_ptr<SurgeSynthesizer>(new SurgeSynthesizer( parent.get() ) );
    surge->setSamplerate(sr);
+   surge->time_data.tempo = 120;
+   surge->time_data.ppqPos = 0;
    return surge;
 }
 

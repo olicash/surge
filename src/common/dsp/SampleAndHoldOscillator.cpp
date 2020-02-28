@@ -78,12 +78,12 @@ void SampleAndHoldOscillator::init(float pitch, bool is_display)
       else
       {
          double drand = (double)rand() / RAND_MAX;
-         double detune = localcopy[id_detune].f * (detune_bias * float(i) + detune_offset);
+         double detune = oscdata->p[5].get_extended(localcopy[id_detune].f) * (detune_bias * float(i) + detune_offset);
          // double t = drand * max(2.0,dsamplerate_os / (16.35159783 *
          // pow((double)1.05946309435,(double)pitch)));
-         double st = drand * note_to_pitch(detune - 12);
+         double st = drand * storage->note_to_pitch_tuningctr(detune) * 0.5;
          drand = (double)rand() / RAND_MAX;
-         double ot = drand * note_to_pitch(detune + l_sync.v);
+         double ot = drand * storage->note_to_pitch_tuningctr(detune);
          oscstate[i] = st;
          syncstate[i] = st;
       }
@@ -128,7 +128,7 @@ void SampleAndHoldOscillator::convolute(int voice, bool FM, bool stereo)
 {
    float detune = drift * driftlfo[voice];
    if (n_unison > 1)
-      detune += localcopy[id_detune].f * (detune_bias * float(voice) + detune_offset);
+      detune += oscdata->p[5].get_extended(localcopy[id_detune].f) * (detune_bias * float(voice) + detune_offset);
 
    float sub = l_sub.v;
 
@@ -143,7 +143,7 @@ void SampleAndHoldOscillator::convolute(int voice, bool FM, bool stereo)
    if (syncstate[voice] < oscstate[voice])
    {
       ipos = (unsigned int)((float)p24 * (syncstate[voice] * pitchmult_inv));
-      float t = note_to_pitch_inv(detune);
+      float t = storage->note_to_pitch_inv_tuningctr(detune);
       if (state[voice] == 1)
          invertcorrelation = -1.f;
       state[voice] = 0;
@@ -164,9 +164,13 @@ void SampleAndHoldOscillator::convolute(int voice, bool FM, bool stereo)
    // add time until next statechange
    float t;
    if (oscdata->p[5].absolute)
-      t = note_to_pitch_inv(detune * pitchmult_inv * (1.f / 440.f) + l_sync.v);
+   {
+      // see the comment in SurgeSuperOscillator in the absolute branch
+      t = storage->note_to_pitch_inv_ignoring_tuning( detune * storage->note_to_pitch_inv_ignoring_tuning( pitch ) * 16 / 0.9443 );
+      if( t < 0.1 ) t = 0.1;
+   }
    else
-      t = note_to_pitch_inv(detune + l_sync.v);
+       t = storage->note_to_pitch_inv_tuningctr(detune + l_sync.v);
 
    float g, gR;
 
@@ -252,8 +256,8 @@ template <bool is_init> void SampleAndHoldOscillator::update_lagvals()
    l_smooth.newValue(localcopy[id_smooth].f);
    l_sub.newValue(localcopy[id_sub].f);
 
-   float invt =
-       4.f * min(1.0, (8.175798915 * note_to_pitch(pitch + l_sync.v)) * dsamplerate_os_inv);
+   auto pp = storage->note_to_pitch_tuningctr(pitch + l_sync.v);
+   float invt = 4.f * min(1.0, (8.175798915 * pp * dsamplerate_os_inv) );
    float hpf2 = min(integrator_hpf, powf(hpf_cycle_loss, invt));
    // TODO Make a lookup-table
 
@@ -276,7 +280,7 @@ void SampleAndHoldOscillator::process_block(
 {
    this->pitch = min(148.f, pitch0);
    this->drift = drift;
-   pitchmult_inv = max(1.0, dsamplerate_os * (1 / 8.175798915) * note_to_pitch_inv(pitch));
+   pitchmult_inv = max(1.0, dsamplerate_os * (1 / 8.175798915) * storage->note_to_pitch_inv(pitch));
    pitchmult = 1.f / pitchmult_inv;
    // This must be a real division, reciprocal-approximation is not precise enough
    int k, l;

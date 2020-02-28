@@ -4,35 +4,9 @@
 
 #include "HeadlessUtils.h"
 #include "Player.h"
+#include "SurgeError.h"
 
-void simpleOscillatorToStdOut()
-{
-   SurgeSynthesizer* surge = Surge::Headless::createSurge(44100);
-
-   /*
-   ** Change a parameter in the scene. Do this by traversing the
-   ** graph in the current patch (which is in surge->storage).
-   **
-   ** Clearly a more fulsome headless API would provide wrappers around
-   ** this for common activities. This sets up a pair of detuned saw waves
-   ** both active.
-   */
-   surge->storage.getPatch().scene[0].osc[0].pitch.set_value_f01(4);
-   surge->storage.getPatch().scene[0].mute_o2.set_value_f01(0, true);
-   surge->storage.getPatch().scene[0].osc[1].pitch.set_value_f01(1);
-
-   Surge::Headless::playerEvents_t terryRiley = Surge::Headless::makeHoldMiddleC(4410);
-
-   float* data = NULL;
-   int nSamples, nChannels;
-
-   Surge::Headless::playAsConfigured(surge, terryRiley, &data, &nSamples, &nChannels);
-   Surge::Headless::writeToStream(data, nSamples, nChannels, std::cout);
-
-   if (data)
-      delete[] data;
-   delete surge;
-}
+#include "Tunings.h"
 
 void statsFromPlayingEveryPatch()
 {
@@ -41,7 +15,7 @@ void statsFromPlayingEveryPatch()
    ** and a scale then asking headless to map it onto every patch
    ** and call us back with a result
    */
-   SurgeSynthesizer* surge = Surge::Headless::createSurge(44100);
+   auto surge = Surge::Headless::createSurge(44100);
 
    Surge::Headless::playerEvents_t scale =
        Surge::Headless::make120BPMCMajorQuarterNoteScale(0, 44100);
@@ -84,14 +58,71 @@ void statsFromPlayingEveryPatch()
    Surge::Headless::playOnEveryPatch(surge, scale, callBack);
 }
 
+
+void playSomeBach()
+{ 
+   auto surge = Surge::Headless::createSurge(44100);
+
+   std::string tmpdir = "/tmp";
+   std::string fname = tmpdir + "/988-v05.mid";
+
+   FILE* tf = fopen(fname.c_str(), "r");
+   if (!tf)
+   {
+      std::string cmd = "curl -o " + fname + " http://www.jsbach.net/midi/bwv988/988-v05.mid";
+      system(cmd.c_str()); 
+   }
+   else
+      fclose(tf);
+
+   std::string otp = "DX EP 1";
+   for (int i = 0; i < surge->storage.patch_list.size(); ++i)
+   {
+      Patch p = surge->storage.patch_list[i];
+      if (p.name == otp)
+      {
+         std::cout << "Found '" << otp << "' patch @" << i << std::endl;
+         surge->loadPatch(i);
+         break;
+      }
+   }
+   Surge::Headless::renderMidiFileToWav(surge, fname, fname + ".wav");
+}
+
+
 /*
 ** This is a simple main that, for now, you make call out to the application
 ** stub of your choosing. We have two in Applications and we call them both
 */
 int main(int argc, char** argv)
 {
-   simpleOscillatorToStdOut();
-   statsFromPlayingEveryPatch();
+   std::cout << "\n\n"
+             << "surge-headless is our regtest engine for the synth engine excluding the UI\n"
+             << "Run 'surge-headless --help' for options.\n\n";
+   extern int runAllTests(int, char**);
+   return runAllTests(argc, argv);
 
+#if 0
+   std::cout << "Hi! HEADLESS is a development tool the SurgeDevs use to run parts of the synth\n"
+              << "without a UI or a DAW. It explicitly is NOT a standalone version of surge or a\n"
+              << "user targeted application. If you are running it and are not a dev you will\n"
+              << "surely be dissapointed.\n\n";
+   try 
+   {
+      // simpleOscillatorToStdOut();
+      //statsFromPlayingEveryPatch();
+      //playSomeBach();
+      //Surge::Headless::createAndDestroyWithScaleAndRandomPatch(20000);
+      // Surge::Headless::pullInitSamplesWithNoNotes(1000);
+      testTuning();
+      //portableWt();
+   }
+   catch( Surge::Error &e )
+   {
+      std::cout << "SurgeError: " << e.getTitle() << "\n" << e.getMessage() << "\n";
+      return 1;
+   }
+   
    return 0;
+#endif
 }

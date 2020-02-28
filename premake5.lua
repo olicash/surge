@@ -40,6 +40,8 @@ if (os.istarget("macosx")) then
     flags { "StaticRuntime" }
     vectorextensions "SSE2"
 
+    systemversion "10.9"
+    
     defines
     {
         "_aligned_malloc(x,a)=malloc(x)",
@@ -83,7 +85,7 @@ elseif (os.istarget("linux")) then
 
     buildoptions { "-std=c++17" }
 
-    platforms { "x64" }
+    platforms { "x64", "x86" }
 
     files
     {
@@ -154,9 +156,11 @@ end
 
 includedirs {
     "libs/xml",
+    "libs/strnatcmp",
+    "libs/nanosvg/src",
     "src/common/vt_dsp",
     "src/common/thread",
-    "vst3sdk/vstgui4",
+    "vstgui.surge",
     "vst3sdk",
     "libs/"
     }
@@ -206,6 +210,7 @@ function plugincommon()
         "src/common/gui/CNumberField.cpp",
         "src/common/gui/COscillatorDisplay.cpp",
         "src/common/gui/CPatchBrowser.cpp",
+        "src/common/gui/CStatusPanel.cpp",
         "src/common/gui/CScalableBitmap.cpp",
         "src/common/gui/CSnapshotMenu.cpp",
         "src/common/gui/CSurgeSlider.cpp",
@@ -222,18 +227,18 @@ function plugincommon()
         "src/common/vt_dsp/macspecific.cpp",
         "src/common/Parameter.cpp",
         "src/common/precompiled.cpp",
-        "src/common/Sample.cpp",
-        "src/common/SampleLoadRiffWave.cpp",
         "src/common/SurgeError.cpp",
         "src/common/SurgePatch.cpp",
         "src/common/SurgeStorage.cpp",
-        "src/common/SurgeStorageLoadWavetable.cpp",
         "src/common/SurgeSynthesizer.cpp",
         "src/common/SurgeSynthesizerIO.cpp",
+        "src/common/Tunings.cpp",
         "src/common/UserDefaults.cpp",
+        "src/common/WavSupport.cpp",
         "libs/xml/tinyxml.cpp",
         "libs/xml/tinyxmlerror.cpp",
         "libs/xml/tinyxmlparser.cpp",
+        "libs/strnatcmp/strnatcmp.cpp",
         "libs/filesystem/filesystem.cpp",
     }
 
@@ -254,7 +259,8 @@ function plugincommon()
 
         sysincludedirs {
             "src/**",
-            "libs/**",
+            "libs/xml/",
+            "libs/filesystem/",
             "vst3sdk/vstgui4",
         }
 
@@ -263,7 +269,6 @@ function plugincommon()
             "src/mac/**.mm",
             "src/mac/**.cpp",
             "src/mac/**.h",
-            "libs/vst/*.mm",
             VSTGUI .. "vstgui_mac.mm",
             VSTGUI .. "vstgui_uidescription_mac.mm",
         }
@@ -372,9 +377,9 @@ function plugincommon()
             "src/windows/**.cpp",
             "src/windows/**.h",
             "src/windows/surge.rc",
-            "src/windows/scalableui.rc",
             "resources/bitmaps/*.png",
             "assets/original-vector/exported/*.png",
+	    "assets/original-vector/SVG/exported/*.svg",
             VSTGUI .. "vstgui_win32.cpp",
             VSTGUI .. "vstgui_uidescription_win32.cpp",
         }
@@ -578,6 +583,7 @@ elseif (os.istarget("linux")) then
     files
     {
         "vst3sdk/public.sdk/source/main/linuxmain.cpp",
+	"src/linux/LinuxVST3Helpers.cpp"
     }
 
     excludes {
@@ -640,9 +646,8 @@ if (os.istarget("macosx")) then
     includedirs
     {
         "src/au",
-        "libs/",
-        "libs/AudioUnits/AUPublic",
-        "libs/AudioUnits/PublicUtility",
+        "libs/AUPublic/",
+        "libs/PublicUtility/",
     }
 
     excludes
@@ -658,55 +663,62 @@ if (os.istarget("macosx")) then
 
 end
 
--- HEADLESS APP
+-- LV2 PLUGIN --
 
-if (os.istarget("windows")) then
-    project "surge-headless"
-    kind "ConsoleApp"
+if (os.istarget("linux")) then
+-- for now, build it on Linux only
 
-    defines
-    {
-        "TARGET_HEADLESS=1"
+project "surge-lv2"
+kind "SharedLib"
+uuid "ECF54716-E9BC-4FF9-9F45-37A2FF4E0D6B"
+
+defines
+{
+    "TARGET_LV2=1"
+}
+
+plugincommon()
+
+files {
+    "src/lv2/**.cpp",
+    "src/lv2/**.h",
+    VSTGUI .. "plugin-bindings/plugguieditor.cpp",
     }
 
-    plugincommon()
+excludes {
+    VSTGUI .. "aeffguieditor.cpp",
+}
 
-    files
-    {
-        "src/headless/main.cpp",
-        "src/headless/DisplayInfoHeadless.cpp",
-        "src/headless/UserInteractionsHeadless.cpp",
-        "src/headless/LinkFixesHeadless.cpp",
-        "src/headless/HeadlessUtils.cpp",
-        "src/headless/Player.cpp"
-        
+includedirs {
+    "src/lv2",
+    "libs/lv2",
+    "vst3sdk"
+}
+
+configuration { "Debug" }
+targetdir "target/lv2/Debug/Surge.lv2"
+targetsuffix "-Debug"
+
+configuration { "Release" }
+targetdir "target/lv2/Release/Surge.lv2"
+
+configuration {}
+
+if (os.istarget("macosx")) then
+
+elseif (os.istarget("windows")) then
+
+elseif (os.istarget("linux")) then
+
+    excludes {
+        -- This is both deprecated and, on linux, ejects a non-linkable symbol. So exclude it.
+        "vst3sdk/base/source/timer.cpp"
     }
 
-    excludes
-    {
-        "src/common/gui/*"
-    }
+end
 
-    includedirs
-    {
-        "src/headless"
-    }
+postbuildcommands {
+    "python scripts/linux/generate-lv2-ttl.py %{cfg.targetdir}/%{cfg.targetprefix}%{cfg.targetname}%{cfg.targetsuffix}%{cfg.targetextension}"
+}
 
-    configuration { "Debug" }
-    targetdir "target/headless/Debug"
-    targetsuffix "-Debug"
-
-    configuration { "Release" }
-    targetdir "target/headless/Release"
-
-    configuration {}
-
-    excludes
-    {
-         VSTGUI .. "vstgui_win32.cpp",
-         VSTGUI .. "vstgui_uidescription_win32.cpp",
-         "src/windows/DisplayInfoWin.cpp",
-         "src/windows/UserInteractionsWin.cpp",
-         "src/windows/RuntimeFontWin.cpp"
-    }
 end

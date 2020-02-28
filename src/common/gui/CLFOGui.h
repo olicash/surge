@@ -90,6 +90,17 @@ public:
       delete cdisurf;
    }
    virtual void draw(VSTGUI::CDrawContext* dc);
+   void drawVectorized(VSTGUI::CDrawContext* dc);
+   void drawBitmap(VSTGUI::CDrawContext* dc);
+   void drawStepSeq(VSTGUI::CDrawContext *dc, VSTGUI::CRect &maindisp, VSTGUI::CRect &leftpanel);
+   
+   void invalidateIfIdIsInRange(int id);
+   void invalidateIfAnythingIsTemposynced();
+
+   void setTimeSignature(int n, int d ) {
+      tsNum = n;
+      tsDen = d;
+   }
 
 protected:
    LFOStorage* lfodata;
@@ -97,6 +108,9 @@ protected:
    SurgeStorage* storage;
    unsigned int coltable[256];
    CDIBitmap* cdisurf;
+   int tsNum = 4, tsDen = 4;
+   
+   
    VSTGUI::CRect shaperect[n_lfoshapes];
    VSTGUI::CRect steprect[n_stepseqsteps];
    VSTGUI::CRect gaterect[n_stepseqsteps];
@@ -104,6 +118,8 @@ protected:
    VSTGUI::CRect ss_shift_left, ss_shift_right;
    bool edit_trigmask;
    int controlstate;
-
+   int selectedSSrow = -1;
+   bool ignore_bitmap_pref = false; // if this is true, we always use the bitmap
+   
    CLASS_METHODS(CLFOGui, VSTGUI::CControl)
 };

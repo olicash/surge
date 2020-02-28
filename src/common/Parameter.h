@@ -3,6 +3,7 @@
 //-------------------------------------------------------------------------------------------------------
 #pragma once
 #include "globals.h"
+#include <string>
 
 union pdata
 {
@@ -25,6 +26,7 @@ enum ctrltypes
    ct_percent_bidirectional,
    ct_pitch_octave,
    ct_pitch_semi7bp,
+   ct_pitch_semi7bp_absolutable,
    ct_pitch,
    ct_fmratio,
    ct_fmratio_int,
@@ -34,14 +36,18 @@ enum ctrltypes
    ct_reverbshape,
    ct_decibel,
    ct_decibel_narrow,
+   ct_decibel_narrow_extendable,
    ct_decibel_extra_narrow,
    ct_decibel_attenuation,
    ct_decibel_attenuation_large,
    ct_decibel_fmdepth,
+   ct_decibel_extendable,
    ct_freq_audible,
    ct_freq_mod,
    ct_freq_hpf,
    ct_freq_shift,
+   ct_freq_vocoder_low,
+   ct_freq_vocoder_high,
    ct_bandwidth,
    ct_envtime,
    ct_envtime_lfodecay,
@@ -71,6 +77,7 @@ enum ctrltypes
    ct_polymode,
    ct_polylimit,
    ct_midikey,
+   ct_midikey_or_channel,
    ct_bool,
    ct_bool_relative_switch,
    ct_bool_link_switch,
@@ -83,6 +90,11 @@ enum ctrltypes
    ct_stereowidth,
    ct_bool_fm,
    ct_character,
+   ct_sineoscmode,
+   ct_sinefmlegacy,
+   ct_countedset_percent, // what % through a counted set are you
+   ct_vocoder_bandcount,
+   ct_distortion_waveshape,
    num_ctrltypes,
 };
 
@@ -102,6 +114,17 @@ enum ControlGroup
    cg_FX = 7,
 };
 
+struct ParamUserData
+{
+   virtual ~ParamUserData()
+   {}
+};
+
+struct CountedSetUserData : public ParamUserData
+{
+   virtual int getCountedSetSize() = 0; // A constant time answer to the count of the set
+};
+
 class Parameter
 {
 public:
@@ -118,9 +141,12 @@ public:
                      int ctrlgroup_entry = 0,
                      bool modulateable = true,
                      int ctrlstyle = cs_off);
+   virtual ~Parameter();
+
    bool can_temposync();
    bool can_extend_range();
    bool can_be_absolute();
+   bool can_snap();
    void clear_flags();
    void set_type(int ctrltype);
    void morph(Parameter* a, Parameter* b, float x);
@@ -133,6 +159,7 @@ public:
    const char* get_storage_name();
    const wchar_t* getUnit() const;
    void get_display(char* txt, bool external = false, float ef = 0.f);
+   void get_display_alt(char* txt, bool external = false, float ef = 0.f);
    char* get_storage_value(char*);
    void set_storage_value(int i);
    void set_storage_value(float f);
@@ -147,6 +174,8 @@ public:
    float set_modulation_f01(float v); // used by the gui to set the modulation to match the position
                                       // of the modulated handle
    void bound_value(bool force_integer = false);
+   std::string tempoSyncNotationValue(float f);
+   
    pdata val, val_default, val_min, val_max;
    int id;
    char name[NAMECHARS], dispname[NAMECHARS], name_storage[NAMECHARS], fullname[NAMECHARS];
@@ -162,5 +191,8 @@ public:
    bool affect_other_parameters;
    float moverate;
    bool per_voice_processing;
-   bool temposync, extend_range, absolute;
+   bool temposync, extend_range, absolute, snap;
+
+   ParamUserData* user_data;              // I know this is a bit gross but we have a runtime type
+   void set_user_data(ParamUserData* ud); // I take a shallow copy and don't assume ownership and assume i am referencable
 };

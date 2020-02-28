@@ -25,8 +25,10 @@ void LfoModulationSource::assign(SurgeStorage* storage,
    env_state = lenv_delay;
    env_val = 0.f;
    env_phase = 0;
+   shuffle_id = 0;
    ratemult = 1.f;
-   retrigger_EG = false;
+   retrigger_FEG = false;
+   retrigger_AEG = false;
 
    rate = lfo->rate.param_id_in_scene;
    magn = lfo->magnitude.param_id_in_scene;
@@ -39,7 +41,7 @@ void LfoModulationSource::assign(SurgeStorage* storage,
    startphase = lfo->start_phase.param_id_in_scene;
    ideform = lfo->deform.param_id_in_scene;
 
-   phase = localcopy[startphase].f;
+   phaseInitialized = false;
 
    if (is_display)
       srand(17);
@@ -93,8 +95,23 @@ float CubicInterpolate(float y0, float y1, float y2, float y3, float mu)
    return (a0 * mu * mu2 + a1 * mu2 + a2 * mu + a3);
 }
 
+void LfoModulationSource::initPhaseFromStartPhase()
+{
+   phase = localcopy[startphase].f;
+   phaseInitialized = true;
+   while( phase < 0.f )
+      phase += 1.f;
+   while( phase > 1.f )
+      phase -= 1.f;
+}
+
 void LfoModulationSource::attack()
 {
+   if( ! phaseInitialized )
+   {
+      initPhaseFromStartPhase();
+   }
+
    env_state = lenv_delay;
 
    env_val = 0.f;
@@ -127,6 +144,12 @@ void LfoModulationSource::attack()
       // else if(state) phaseslider = lfo->start_phase.val.f;
       else
          phaseslider = localcopy[startphase].f;
+
+      // With modulation the phaseslider can be outside [0,1], as in #1524
+      while( phaseslider < 0.f )
+         phaseslider += 1.f;
+      while( phaseslider > 1.f )
+         phaseslider -= 1.f;
 
       switch (lfo->trigmode.val.i)
       {
@@ -230,7 +253,13 @@ void LfoModulationSource::release()
 
 void LfoModulationSource::process_block()
 {
-   retrigger_EG = false;
+   if( ! phaseInitialized )
+   {
+      initPhaseFromStartPhase();
+   }
+
+   retrigger_FEG = false;
+   retrigger_AEG = false;
    int s = lfo->shape.val.i;
 
    float frate = envelope_rate_linear(-localcopy[rate].f);
@@ -363,8 +392,24 @@ void LfoModulationSource::process_block()
       }
       break;
       case ls_stepseq:
-         if (ss->trigmask & (1 << step))
-            retrigger_EG = true;
+         /*
+         ** You might thing we don't need this and technically we don't
+         ** but I wanted to keep it here to retain compatability with 
+         ** versions of trigmask which were streamed in older sessions
+         */
+         if (ss->trigmask & (UINT64_C(1) << step))
+         {
+            retrigger_FEG = true;
+            retrigger_AEG = true;
+         }
+         if (ss->trigmask & (UINT64_C(1) << (16+step)))
+         {
+            retrigger_FEG = true;
+         }
+         if (ss->trigmask & (UINT64_C(1) << (32+step)))
+         {
+            retrigger_AEG = true;
+         }
          step++;
          shuffle_id = (shuffle_id + 1) & 1;
          if (shuffle_id)

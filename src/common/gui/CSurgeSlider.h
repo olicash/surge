@@ -3,27 +3,18 @@
 //-------------------------------------------------------------------------------------------------------
 #pragma once
 #include "vstcontrols.h"
-
-enum CControlEnum_turbodeluxe
-{
-   kBipolar = 1 << 15,
-   kWhite = 1 << 16,
-   kSemitone = 1 << 17,
-   kMini = 1 << 18,
-   kMeta = 1 << 19,
-   kEasy = 1 << 20,
-   kHide = 1 << 21,
-   kNoPopup = 1 << 22,
-};
+#include "SurgeBitmaps.h"
+#include "SurgeParamConfig.h"
 
 class CSurgeSlider : public CCursorHidingControl
 {
 public:
    CSurgeSlider(const VSTGUI::CPoint& loc,
                 long style,
-                VSTGUI::IControlListener* listener = 0,
-                long tag = 0,
-                bool is_mod = false);
+                VSTGUI::IControlListener* listener,
+                long tag,
+                bool is_mod,
+                std::shared_ptr<SurgeBitmaps> bitmapStore);
    ~CSurgeSlider();
    virtual void draw(VSTGUI::CDrawContext*);
    // virtual void mouse (VSTGUI::CDrawContext *pContext, VSTGUI::CPoint &where, long buttons = -1);
@@ -37,6 +28,9 @@ public:
    virtual VSTGUI::CMouseEventResult
    onMouseUp(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons); ///< called when a mouse up event occurs
 
+   virtual VSTGUI::CMouseEventResult
+   onMouseExited(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override;
+   
    virtual double getMouseDeltaScaling(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons);
    virtual void onMouseMoveDelta(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons, double dx, double dy);
 
@@ -58,24 +52,39 @@ public:
    {
       has_modulation = b;
    } // true if the slider has modulation routings assigned to it
-   virtual void setModCurrent(bool b)
+   virtual void setModCurrent(bool isCurrent, bool isBipolarModulator)
    {
-      has_modulation_current = b;
+      has_modulation_current = isCurrent;
+      modulation_is_bipolar = isBipolarModulator;
       invalid();
    } // - " " - for the currently selected modsource
-   virtual void bounceValue();
+   virtual void bounceValue(const bool keeprest = false);
 
    virtual bool isInMouseInteraction();
 
    virtual void setValue(float val);
    virtual void setBipolar(bool);
 
+   virtual void setTempoSync( bool b ) { is_temposync = b; }
+   
    void SetQuantitizedDispValue(float f);
 
    CLASS_METHODS(CSurgeSlider, CControl)
 
    bool is_mod;
    bool disabled;
+   bool hasBeenDraggedDuringMouseGesture = false;
+   
+   enum MoveRateState
+   {
+      kUnInitialized = 0,
+      kClassic,
+      kSlow,
+      kMedium,
+      kExact
+   };
+
+   static MoveRateState sliderMoveRateState;
 
 private:
    VSTGUI::CBitmap *pHandle, *pTray, *pModHandle;
@@ -90,8 +99,12 @@ private:
    float moverate, statezoom;
    int typex, typey;
    int typehx, typehy;
-   bool has_modulation, has_modulation_current;
+   bool has_modulation, has_modulation_current, modulation_is_bipolar = false;
+   bool is_temposync = false;
    VSTGUI::CPoint lastpoint, sourcepoint;
    float oldVal, *edit_value;
    int drawcount_debug;
+
+   float restvalue, restmodval;
+   bool wheelInitiatedEdit = false;
 };

@@ -11,6 +11,7 @@
 #include <string>
 #include <math.h>
 #include "unitconversion.h"
+#include <iostream>
 
 using namespace VSTGUI;
 
@@ -317,6 +318,12 @@ void CNumberField::draw(CDrawContext* pContext)
    case cm_polyphony:
       sprintf(the_text, "%i / %i", i_poly, i_value);
       break;
+   case cm_midichannel_from_127:
+   {
+      int mc = i_value / 8 + 1;
+      sprintf(the_text, "Ch. %i", mc );
+   }
+   break;
    case cm_notename:
    {
       int octave = (i_value / 12) - 2;
@@ -478,7 +485,7 @@ void CNumberField::draw(CDrawContext* pContext)
          sprintf(the_text, "no");
       break;
    case cm_none:
-      sprintf(the_text, "---");
+      sprintf(the_text, "-");
       break;
    }
 
@@ -637,7 +644,11 @@ CMouseEventResult CNumberField::onMouseMoved(CPoint& where, const CButtonState& 
 {
    if ((controlstate == cs_drag) && (buttons & kLButton))
    {
-      float delta = where.x - lastmousepos.x;
+      float dx = where.x - lastmousepos.x;
+      float dy = where.y - lastmousepos.y;
+      
+      float delta = dx - dy; // for now lets try this. Remenber y 'up' in logical space is 'down' in pixel space
+      
       lastmousepos = where;
 
       if (buttons & kShift)
@@ -645,10 +656,17 @@ CMouseEventResult CNumberField::onMouseMoved(CPoint& where, const CButtonState& 
       if (buttons & kRButton)
          delta *= 0.1;
 
+      // For notename, this is all way too fast #1436
+      if( controlmode == cm_notename )
+      {
+         delta = delta * 0.4;
+      }
+      
       value += delta * 0.01;
       // i_value = i_min + (int)(value*((float)(i_max - i_min)));
       i_value = (int)((1.f / 0.99f) * (value - 0.005f) * (float)(i_max - i_min) + 0.5) + i_min;
 
+      
       bounceValue();
       // invalid();
       // setDirty();
@@ -657,18 +675,24 @@ CMouseEventResult CNumberField::onMouseMoved(CPoint& where, const CButtonState& 
    }
    return kMouseEventHandled;
 }
+
 bool CNumberField::onWheel(const CPoint& where, const float& distance, const CButtonState& buttons)
 {
    beginEdit();
-   i_value += int(distance);
-   int steps = i_max - i_min;
-   int offset = i_value - i_min;
-   float multiplier = 1.0f / (float) steps;
-   value = (float) offset * multiplier;
-   setIntValue(i_value); // also does bounceValue for i_value and value ..and setDirty
-   setValue(value);
+   double mouseFactor = 0.01;
+   if( controlmode == cm_midichannel )
+   {
+      mouseFactor = 0.6; // these are all just empirical from trying them on my mbp
+   }
+
+   value += distance * mouseFactor;
+   i_value = (int)((1.f / 0.99f) * (value - 0.005f) * (float)(i_max - i_min) + 0.5) + i_min;
+   bounceValue();
+   invalid();
+   setDirty();
    if (isDirty() && listener)
-         listener->valueChanged(this);
+      listener->valueChanged(this);
+
    endEdit();
    return true;
 }

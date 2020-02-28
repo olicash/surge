@@ -13,7 +13,7 @@ If you would also like to participate in discussions, testing, and design of Sur
 details below and also in [the contributors section of the surge website](https://surge-synthesizer.github.io/#contributors).
 
 Surge currently builds on macOS as a 64 bit AU, VST2 and VST3, Windows as a 64 and 32 bit VST2 and VST3 
-and Linux as a 64 bit VST2.
+and Linux as a 64 bit VST2, VST3 and LV2.
 
 This README serves as the root of developer documentation for the project.
 
@@ -21,7 +21,7 @@ This README serves as the root of developer documentation for the project.
 
 We welcome developers. Our workflow revolves around github issues in this github repo
 and conversations in our slack and IRC chatrooms. You can read our developer guidelines
-in [doc/Developer Guide.md](doc/Developer Guide.md).
+in [our developer guide doc](doc/Developer%20Guide.md).
 
 The developer guide also contains information about testing and debugging in particular hosts
 on particular platforms.
@@ -51,8 +51,10 @@ If you are doing a fresh install of Visual Studio Community Edition, after you i
 update, and then make sure the `desktop C++ kit`, including `optional CLI support`, `Windows 8.1 SDK`, 
 and `VC2015 toolset for desktop` are installed. 
 
+You then want to start a visual studio prompt. This is a command like `x64 Native Tools Command Prompt for VS 2017` or similar installed by your visual studio install.
+
 After all this is done, make a fork of this repo, clone the repo and get the required 
-submodules with the following commands.
+submodules with the following commands in that command shell.
 
 ```
 git clone https://github.com/{your-user-name}/surge.git
@@ -176,15 +178,23 @@ You can now build with the command
 ./build-linux.sh build
 ```
 
-which will run premake and build the asset.
+or if you prefer a specific flavor
 
-To use the VST, you need to install it locally along with supporting files. You can do this manually
-if you desire, but the build script will also do it.
 
 ```
-./build-linux.sh install --local
+./build-linux.sh build --project=lv2
 ```
-Script will install vst2 to $HOME/.vst dir. To change this, edit vst2_dest_path to taste. Without --local files will be installed to system locations (needs sudo).
+
+which will run premake and build the assets.
+
+To use the VST2, VST3, or LV2, you need to install it locally along with supporting files. You can do this manually
+if you desire, but the build script will also do it using the `install` option.
+
+```
+./build-linux.sh install --project=lv2 --local 
+```
+
+Script will install vst2 to $HOME/.vst dir, vst3 to $HOME/.vst3 and LV2 to $HOME/lv2 in local mode. To change this, edit vst2_dest_path and so forth to taste. Without --local files will be installed to system locations (needs sudo).
 
 For other options, you can do `./build-linux.sh --help`.
 
@@ -193,10 +203,11 @@ For other options, you can do `./build-linux.sh --help`.
 In addition to the build commands above, we use azure pipelines to do continuous integration.
 This means each of your pull requests will be automatically built in all of our environments,
 and a clean build on all platforms is an obvious pre-requisite. If you have questions about 
-our CI tools, please ask on our Slack channel.
+our CI tools, please ask on our Slack channel. We are grateful to Microsoft for providing 
+azure pipelines to free to the open source community!
 
 # References
 
-  * Most Surge-related conversation on the Surge Synth Slack. [You can join via this link](https://join.slack.com/t/surgesynth/shared_invite/enQtNTE4OTg0MTU2NDY5LTE4MmNjOTBhMjU5ZjEwNGU5MjExODNhZGM0YjQxM2JiYTI5NDE5NGZkZjYxZTkzODdiNTM0ODc1ZmNhYzQ3NTU)
+  * Most Surge-related conversation on the Surge Synth Slack. [You can join via this link](https://raw.githubusercontent.com/surge-synthesizer/surge-synthesizer.github.io/master/_includes/slack_invite_link)
   * IRC channel at #surgesynth at irc.freenode.net. The logs are available at https://freenode.logbot.info/surgesynth/.
   * Discussion at KVR-Forum [here](https://www.kvraudio.com/forum/viewtopic.php?f=1&t=511922)

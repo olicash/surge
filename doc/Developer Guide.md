@@ -160,7 +160,7 @@ The easiest way to do this is to move the AudioUnitCache away from it's location
 mv ~/Library/Caches/AudioUnitCache ~/Desktop
 ```
 
-For the AU Host, the easiest way to do this is with (Hosting AU)[http://ju-x.com/hostingau.html].
+For the AU Host, the easiest way to do this is with [Hosting AU](http://ju-x.com/hostingau.html).
 Install it and set up a single track containing a surge instance. Save that Hosting AU
 configuration as (say) `~/Desktop/Surge.hosting` then run:
 
@@ -189,8 +189,15 @@ and then after a build you can load the VST2 into a single host with
 ```
 
 Finally, bitwig is an excellent host for development since you don't have to restart
-it between builds, but capturing stdout is something I haven't figured out yet. If you do
-please update this document!
+it between builds. stdout goes to the logs in ~/Library/Logs/Bitwig
+
+Profiling on macOS is awesome too! Start the synth doing something then
+
+```
+instruments -l 30000 -t Time\ Profiler -p pid
+```
+
+and look at the output with open.
 
 ### Linux
 
@@ -207,11 +214,11 @@ sudo apt-get install jack-keyboard
 sudo apt-get install ajmidid
 ```
 
-The run jac and ajmidid in separate terminals
+Then run `jac` and `ajmidid` in separate terminals
 
 ```
-jack -d alsa -X alsa_midi
-ajmidid -e
+jackd -d alsa -X alsa_midi
+a2jmidid -e
 ```
 
 Now start surge with carla-single

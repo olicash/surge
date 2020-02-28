@@ -29,10 +29,22 @@ void DualDelayEffect::init()
    lp.suspend();
    hp.suspend();
    setvars(true);
+   inithadtempo = true;
+   // See issue #1444 and the fix for this stuff
+   if( storage->temposyncratio_inv == 0 )
+   {
+      inithadtempo = false;
+   }
 }
 
 void DualDelayEffect::setvars(bool init)
 {
+   if( ! inithadtempo && storage->temposyncratio_inv != 0 )
+   {
+      init = true;
+      inithadtempo = true;
+   }
+   
    float fb = amp_to_linear(*f[2]);
    float cf = amp_to_linear(*f[3]);
 
@@ -60,19 +72,19 @@ void DualDelayEffect::setvars(bool init)
    if (init)
    {
       timeL.newValue(samplerate * ((fxdata->p[0].temposync ? storage->temposyncratio_inv : 1.f) *
-                                   note_to_pitch(12 * fxdata->p[0].val.f)) +
+                                   storage->note_to_pitch_ignoring_tuning(12 * fxdata->p[0].val.f)) +
                      LFOval - FIRoffset);
       timeR.newValue(samplerate * ((fxdata->p[1].temposync ? storage->temposyncratio_inv : 1.f) *
-                                   note_to_pitch(12 * fxdata->p[1].val.f)) -
+                                   storage->note_to_pitch_ignoring_tuning(12 * fxdata->p[1].val.f)) -
                      LFOval - FIRoffset);
    }
    else
    {
       timeL.newValue(samplerate * ((fxdata->p[0].temposync ? storage->temposyncratio_inv : 1.f) *
-                                   note_to_pitch(12 * *f[0])) +
+                                   storage->note_to_pitch_ignoring_tuning(12 * *f[0])) +
                      LFOval - FIRoffset);
       timeR.newValue(samplerate * ((fxdata->p[1].temposync ? storage->temposyncratio_inv : 1.f) *
-                                   note_to_pitch(12 * *f[1])) -
+                                   storage->note_to_pitch_ignoring_tuning(12 * *f[1])) -
                      LFOval - FIRoffset);
    }
 

@@ -31,6 +31,7 @@
 #include <objc/runtime.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <AudioUnit/AUCocoaUIView.h>
+#import <AppKit/AppKit.h>
 #include "aulayer.h"
 #include "aulayer_cocoaui.h"
 
@@ -96,6 +97,7 @@ void timerCallback( CFRunLoopTimerRef timer, void *info )
 @implementation SurgeNSView
 - (id) initWithSurge: (SurgeGUIEditor *) cont preferredSize: (NSSize) size
 {
+    cont->setZoomCallback( []( SurgeGUIEditor *ed ) {} );
     self = [super initWithFrame: NSMakeRect (0, 0, size.width / 2, size.height / 2)];
 
     idleTimer = nil;
@@ -295,6 +297,7 @@ ComponentResult aulayer::GetProperty(AudioUnitPropertyID iID, AudioUnitScope iSc
                 if( editor_instance == NULL )
                 {
                     editor_instance = new SurgeGUIEditor( this, plugin_instance );
+                    editor_instance->loadFromDAWExtraState(plugin_instance);
                 }
                 void** pThis = (void**)(outData);
                 *pThis = (void*)editor_instance;

@@ -43,7 +43,7 @@ CMouseEventResult CHSwitch2::onMouseDown(CPoint& where, const CButtonState& butt
       if (columns * rows > 1)
       {
          value = (float)(x + y * columns) / (float)(columns * rows - 1);
-
+         
          if (value > 1.f)
             value = 1.f;
          else if (value < 0.f)
@@ -76,7 +76,7 @@ CMouseEventResult CHSwitch2::onMouseUp(CPoint& where, const CButtonState& button
 }
 CMouseEventResult CHSwitch2::onMouseMoved(CPoint& where, const CButtonState& buttons)
 {
-   if (dragable && ( buttons.getButtonState() || ( buttons.getModifierState() & kShift ) ) )
+   if (dragable && ( buttons.getButtonState() ))
    {
       auto mouseableArea = getMouseableArea();
       double coefX, coefY;
@@ -92,7 +92,7 @@ CMouseEventResult CHSwitch2::onMouseMoved(CPoint& where, const CButtonState& but
       if (columns * rows > 1)
       {
          value = (float)(x + y * columns) / (float)(columns * rows - 1);
-
+         
          if (value > 1.f)
             value = 1.f;
          else if (value < 0.f)
@@ -116,20 +116,22 @@ bool CHSwitch2::onWheel(const CPoint& where, const float& distance, const CButto
       float range = getRange();
       if (columns >1)
       {
-         rate = range / (float)columns;
+         rate = range / (float)(columns-1); // Colums-1 = number of scroll steps
          newVal += rate * distance;
       }
       else
       {
-         rate = range / (float)rows;
+         rate = range / (float)(rows-1); // Rows-1 = Number of scroll steps
          newVal += rate * -distance; // flip distance (==direction) because it makes more sense when wheeling
       }
       beginEdit();
       value = newVal;
+
       bounceValue();
       if (listener)
          listener->valueChanged(this);
       setValue(value);
+      endEdit();
       return true;
    }
    return false;

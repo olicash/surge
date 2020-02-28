@@ -11,6 +11,7 @@
 struct QuadFilterChainState;
 
 #include <list>
+#include <utility>
 #include <atomic>
 
 #if TARGET_AUDIOUNIT
@@ -22,6 +23,9 @@ typedef SurgeVst3Processor PluginLayer;
 #elif TARGET_VST2
 class Vst2PluginInstance;
 using PluginLayer = Vst2PluginInstance;
+#elif TARGET_LV2
+class SurgeLv2Wrapper;
+using PluginLayer = SurgeLv2Wrapper;
 #elif TARGET_HEADLESS
 class HeadlessPluginLayerProxy;
 using PluginLayer = HeadlessPluginLayerProxy;
@@ -32,6 +36,7 @@ class PluginLayer;
 struct timedata
 {
    double ppqPos, tempo;
+   int timeSigNumerator = 4, timeSigDenominator = 4;
 };
 
 struct parametermeta
@@ -59,7 +64,7 @@ public:
 
    // methods
 public:
-   SurgeSynthesizer(PluginLayer* parent);
+   SurgeSynthesizer(PluginLayer* parent, std::string suppliedDataPath="");
    virtual ~SurgeSynthesizer();
    void playNote(char channel, char key, char velocity, char detune);
    void releaseNote(char channel, char key, char velocity);
@@ -124,6 +129,7 @@ public:
    //	float getParameter (long index);
    bool isValidModulation(long ptag, modsources modsource);
    bool isActiveModulation(long ptag, modsources modsource);
+   bool isBipolarModulation(modsources modsources);
    bool isModsourceUsed(modsources modsource);
    bool isModDestUsed(long moddest);
    ModulationRouting* getModRouting(long ptag, modsources modsource);
@@ -137,6 +143,7 @@ public:
    int remapInternalToExternalApiId(unsigned int x);
    void getParameterDisplay(long index, char* text);
    void getParameterDisplay(long index, char* text, float x);
+   void getParameterDisplayAlt(long index, char* text);
    void getParameterName(long index, char* text);
    void getParameterMeta(long index, parametermeta& pm);
    void getParameterNameW(long index, wchar_t* ptr);
@@ -146,6 +153,7 @@ public:
    //	unsigned int getParameterFlags (long index);
    void loadRaw(const void* data, int size, bool preset = false);
    void loadPatch(int id);
+   bool loadPatchByPath(const char* fxpPath, int categoryId, const char* name );
    void incrementPatch(bool nextPrev);
    void incrementCategory(bool nextPrev);
 
@@ -168,6 +176,52 @@ public:
 
    float vu_peak[8];
 
+   void populateDawExtraState() {
+       storage.getPatch().dawExtraState.isPopulated = true;
+       storage.getPatch().dawExtraState.mpeEnabled = mpeEnabled;
+       storage.getPatch().dawExtraState.mpePitchBendRange = mpePitchBendRange;
+       
+       storage.getPatch().dawExtraState.hasTuning = !storage.isStandardTuning;
+       if( ! storage.isStandardTuning )
+           storage.getPatch().dawExtraState.tuningContents = storage.currentScale.rawText;
+       else
+           storage.getPatch().dawExtraState.tuningContents = "";
+
+       storage.getPatch().dawExtraState.hasMapping = !storage.isStandardMapping;
+       if( ! storage.isStandardMapping )
+           storage.getPatch().dawExtraState.mappingContents = storage.currentMapping.rawText;
+       else
+           storage.getPatch().dawExtraState.mappingContents = "";
+   }
+   
+   void loadFromDawExtraState() {
+       if( ! storage.getPatch().dawExtraState.isPopulated )
+           return;
+       mpeEnabled = storage.getPatch().dawExtraState.mpeEnabled;
+       if( storage.getPatch().dawExtraState.mpePitchBendRange > 0 )
+          mpePitchBendRange = storage.getPatch().dawExtraState.mpePitchBendRange;
+
+       if( storage.getPatch().dawExtraState.hasTuning )
+       {
+           auto sc = Surge::Storage::parseSCLData(storage.getPatch().dawExtraState.tuningContents );
+           storage.retuneToScale(sc);
+       }
+       else
+       {
+          storage.retuneToStandardTuning();
+       }
+       
+       if( storage.getPatch().dawExtraState.hasMapping )
+       {
+          auto kb = Surge::Storage::parseKBMData(storage.getPatch().dawExtraState.mappingContents );
+          storage.remapToKeyboard(kb);
+       }
+       else
+       {
+          storage.remapToStandardKeyboard();
+       }
+   }
+   
 public:
    int CC0, PCH, patchid;
    float masterfade = 0;
@@ -195,7 +249,7 @@ public:
 
    // hold pedal stuff
 
-   std::list<int> holdbuffer[2];
+   std::list<std::pair<int,int>> holdbuffer[2];
    void purgeHoldbuffer(int scene);
    quadr_osc sinus;
    int demo_counter = 0;

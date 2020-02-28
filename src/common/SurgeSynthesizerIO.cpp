@@ -7,7 +7,7 @@
 #include <vt_dsp/vt_dsp_endian.h>
 #if LINUX
 #include <experimental/filesystem>
-#elif MAC
+#elif MAC || TARGET_RACK
 #include <filesystem.h>
 #else
 #include <filesystem>
@@ -16,7 +16,12 @@
 #include <iterator>
 #include "UserInteractions.h"
 
+#if WINDOWS && ( _MSC_VER >= 1920 )
+// vs2019
+namespace fs = std::filesystem;
+#else
 namespace fs = std::experimental::filesystem;
+#endif
 
 #if AU
 #include "aulayer.h"
@@ -137,19 +142,29 @@ void SurgeSynthesizer::incrementCategory(bool nextPrev)
 
 void SurgeSynthesizer::loadPatch(int id)
 {
-   patchid = id;
-   Patch e = storage.patch_list[id];
+   if (id < 0)
+      id = 0;
+   if (id >= storage.patch_list.size())
+      id = id % storage.patch_list.size();
 
-   FILE* f = fopen(e.path.generic_string().c_str(), "rb");
+   patchid = id;
+
+   Patch e = storage.patch_list[id];
+   loadPatchByPath( e.path.generic_string().c_str(), e.category, e.name.c_str() );
+}
+
+bool SurgeSynthesizer::loadPatchByPath( const char* fxpPath, int categoryId, const char* patchName )
+{
+   FILE* f = fopen(fxpPath, "rb");
    if (!f)
-      return;
+      return false;
    fxChunkSetCustom fxp;
    fread(&fxp, sizeof(fxChunkSetCustom), 1, f);
    if ((vt_read_int32BE(fxp.chunkMagic) != 'CcnK') || (vt_read_int32BE(fxp.fxMagic) != 'FPCh') ||
        (vt_read_int32BE(fxp.fxID) != 'cjs3'))
    {
       fclose(f);
-      return;
+      return false;
    }
 
    int cs = vt_read_int32BE(fxp.chunkSize);
@@ -163,13 +178,51 @@ void SurgeSynthesizer::loadPatch(int id)
 
    storage.getPatch().comment = "";
    storage.getPatch().author = "";
-   storage.getPatch().category = storage.patch_category[e.category].name;
-   current_category_id = e.category;
-   storage.getPatch().name = e.name;
+   if( categoryId >= 0 )
+   {
+      storage.getPatch().category = storage.patch_category[categoryId].name;
+   }
+   else
+   {
+      storage.getPatch().category = "direct-load";
+   }
+   current_category_id = categoryId;
+   storage.getPatch().name = patchName;
 
    loadRaw(data, cs, true);
    free(data);
 
+   /*
+   ** OK so at this point we may have loaded a patch with a tuning override
+   */
+   if( storage.getPatch().patchTuning.tuningStoredInPatch )
+   {
+       if( storage.isStandardTuning )
+       {
+           storage.retuneToScale(Surge::Storage::parseSCLData(storage.getPatch().patchTuning.tuningContents ));
+           if( storage.getPatch().patchTuning.mappingContents.size() > 1 )
+           {
+              storage.remapToKeyboard(Surge::Storage::parseKBMData(storage.getPatch().patchTuning.mappingContents ) );
+           }
+       }
+       else
+       {
+           auto okc = Surge::UserInteractions::promptOKCancel(std::string("The patch you loaded contains a recommended tuning, but you ") +
+                                                              "already have a tuning in place. Do you want to override your current tuning " +
+                                                              "with the patch sugeested tuning?",
+                                                              "Replace Tuning? (The rest of the patch will still load).");
+           if( okc == Surge::UserInteractions::MessageResult::OK )
+           {
+               storage.retuneToScale(Surge::Storage::parseSCLData(storage.getPatch().patchTuning.tuningContents));
+               if( storage.getPatch().patchTuning.mappingContents.size() > 1 )
+               {
+                  storage.remapToKeyboard(Surge::Storage::parseKBMData(storage.getPatch().patchTuning.mappingContents ) );
+               }
+           }
+       }
+                                 
+   }
+   
    masterfade = 1.f;
 #if AU
    /*	AUPreset preset;
@@ -183,6 +236,7 @@ void SurgeSynthesizer::loadPatch(int id)
    ** Notify the host display that the patch name has changed
    */
    updateDisplay();
+   return true;
 }
 
 void SurgeSynthesizer::loadRaw(const void* data, int size, bool preset)
@@ -195,7 +249,7 @@ void SurgeSynthesizer::loadRaw(const void* data, int size, bool preset)
 
    storage.getPatch().init_default_values();
    storage.getPatch().load_patch(data, size, preset);
-   storage.getPatch().update_controls(false);
+   storage.getPatch().update_controls(false, nullptr, true);
    for (int i = 0; i < 8; i++)
    {
       memcpy(&fxsync[i], &storage.getPatch().fx[i], sizeof(FxStorage));
@@ -300,7 +354,11 @@ void SurgeSynthesizer::savePatch()
            return;
    }
 
+#if WINDOWS && TARGET_RACK
+   std::ofstream f(filename.c_str(), std::ios::out | std::ios::binary);
+#else
    std::ofstream f(filename, std::ios::out | std::ios::binary);
+#endif
 
    if (!f)
       return;

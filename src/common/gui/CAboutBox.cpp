@@ -49,6 +49,8 @@ void CAboutBox::draw(CDrawContext* pContext)
       std::string flavor = "vst3";
 #elif TARGET_VST2
       std::string flavor = "vst2";
+#elif TARGET_LV2
+      std::string flavor = "lv2";
 #else
       std::string flavor = "NON-PLUGIN"; // for linux app
 #endif      
@@ -66,8 +68,9 @@ void CAboutBox::draw(CDrawContext* pContext)
       std::vector< std::string > msgs = { {
               std::string() + "Version " + SURGE_STR(SURGE_VERSION) + " (" + bittiness + " " + platform + " " + flavor + ". Built " +
               __DATE__ + " " + __TIME__ + ")",
+              std::string() + "Resources: dataPath=" + dataPath + " userData=" + userPath,
               "Released under the GNU General Public License, v3",
-              "Copyright 2005-2019 by individual contributors",
+              "Copyright 2005-2020 by individual contributors",
               "Source, contributors and other information at https://github.com/surge-synthesizer/surge",
               "VST Plug-in technology by Steinberg, AU Plugin Technology by Apple Computer"
           } };
@@ -101,8 +104,10 @@ bool CAboutBox::hitTest(const CPoint& where, const CButtonState& buttons)
 
 //------------------------------------------------------------------------
 
-void CAboutBox::boxShow()
+void CAboutBox::boxShow(std::string dataPath, std::string userPath)
 {
+   this->dataPath = dataPath;
+   this->userPath = userPath;
    setViewSize(toDisplay);
    setMouseableArea(toDisplay);
    value = 1.f;
