@@ -5,8 +5,9 @@
 #include "vstcontrols.h"
 #include "SurgeBitmaps.h"
 #include "SurgeParamConfig.h"
+#include "SkinSupport.h"
 
-class CSurgeSlider : public CCursorHidingControl
+class CSurgeSlider : public CCursorHidingControl, public Surge::UI::SkinConsumingComponnt
 {
 public:
    CSurgeSlider(const VSTGUI::CPoint& loc,
@@ -87,7 +88,7 @@ public:
    static MoveRateState sliderMoveRateState;
 
 private:
-   VSTGUI::CBitmap *pHandle, *pTray, *pModHandle;
+   VSTGUI::CBitmap *pHandle, *pTray, *pModHandle, *pTempoSyncHandle;
    VSTGUI::CRect handle_rect, handle_rect_orig;
    VSTGUI::CPoint offsetHandle;
    int range;

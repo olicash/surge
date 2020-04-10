@@ -24,6 +24,7 @@
 #include "UserInteractions.h"
 #include "DisplayInfo.h"
 #include "UserDefaults.h"
+#include "SkinSupport.h"
 
 #include <iostream>
 #include <iomanip>
@@ -105,6 +106,59 @@ enum special_tags
    start_paramtags,
 };
 
+std::string specialTagToString( special_tags t )
+{
+   if( t >= tag_mod_source0 && t <= tag_mod_source_end )
+   {
+      modsources modsource = (modsources)(t - tag_mod_source0);
+      std::string s = std::string( "tag_modsource" ) + modsource_abberations_short[modsource];
+      return s;
+   }
+   
+   switch( t ) {
+   case tag_scene_select:
+      return "tag_scene_select";
+   case tag_osc_select:
+      return "tag_osc_select";
+   case tag_osc_menu:
+      return "tag_osc_menu";
+   case tag_fx_select:
+      return "tag_fx_select";
+   case tag_fx_menu:
+      return "tag_fx_menu";
+   case tag_patchname:
+      return "tag_patchname";
+   case tag_statuspanel:
+      return "tag_statuspanel";
+   case tag_mp_category:
+      return "tag_mp_category";
+   case tag_mp_patch:
+      return "tag_mp_patch";
+   case tag_store:
+      return "tag_store";
+   case tag_store_cancel:
+      return "tag_store_cancel";
+   case tag_store_ok:
+      return "tag_store_ok";
+   case tag_store_name:
+      return "tag_store_name";
+   case tag_store_category:
+      return "tag_store_category";
+   case tag_store_creator:
+      return "tag_store_creator";
+   case tag_store_comments:
+      return "tag_store_comments";
+   case tag_store_tuning:
+      return "tag_store_tuning";
+   case tag_settingsmenu:
+      return "tag_store_settingsmenu";
+   default:
+      return "ERROR";
+   }
+   return "ERROR";
+   
+}
+
 SurgeGUIEditor::SurgeGUIEditor(void* effect, SurgeSynthesizer* synth, void* userdata) : super(effect)
 {
    frame = 0;
@@ -151,7 +205,7 @@ SurgeGUIEditor::SurgeGUIEditor(void* effect, SurgeSynthesizer* synth, void* user
    editor_open = false;
    queue_refresh = false;
    memset(param, 0, 1024 * sizeof(void*));
-   polydisp = 0;
+   polydisp = 0; // FIXME - when changing skins and rebuilding we need to reset these state variables too
    clear_infoview_countdown = -1;
    vu[0] = 0;
    vu[1] = 0;
@@ -244,6 +298,8 @@ SurgeGUIEditor::SurgeGUIEditor(void* effect, SurgeSynthesizer* synth, void* user
 
    for( int i=0; i<n_modsources; ++i )
       modsource_is_alternate[i] = false;
+
+   currentSkin = Surge::UI::SkinDB::get(&(this->synth->storage)).defaultSkin();
 }
 
 SurgeGUIEditor::~SurgeGUIEditor()
@@ -356,7 +412,7 @@ void SurgeGUIEditor::idle()
          int prior = cnpd->getPoly();
          cnpd->setPoly( synth->polydisplay );
          if( prior != synth->polydisplay )
-             cnpd->invalid();
+            cnpd->invalid();
       }
 
       bool patchChanged = false;
@@ -739,6 +795,13 @@ void SurgeGUIEditor::openOrRecreateEditor()
 
    CPoint nopoint(0, 0);
 
+   /*
+   ** There are a collection of member states we need to reset
+   */
+   polydisp = 0;
+   lfodisplay = 0;
+   for( int i=0; i<16; ++i ) vu[i] = 0;
+   
    current_scene = synth->storage.getPatch().scene_active.val.i;
 
    {
@@ -824,6 +887,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
    CRect vurect(763, 0, 763 + 123, 13);
    vurect.offset(0, 14);
    vu[0] = new CSurgeVuMeter(vurect);
+   ((CSurgeVuMeter*)vu[0])->setSkin(currentSkin);
    ((CSurgeVuMeter*)vu[0])->setType(vut_vu_stereo);
    frame->addView(vu[0]);
 
@@ -841,6 +905,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             vr.offset(0, yofs * synth->fx[current_fx]->vu_ypos(i));
             vr.offset(0, 7);
             vu[i + 1] = new CSurgeVuMeter(vr);
+            ((CSurgeVuMeter*)vu[i + 1])->setSkin(currentSkin);
             ((CSurgeVuMeter*)vu[i + 1])->setType(t);
             frame->addView(vu[i + 1]);
          }
@@ -857,6 +922,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             vr.offset(0, yofs * synth->fx[current_fx]->group_label_ypos(i));
             CEffectLabel* lb = new CEffectLabel(vr);
             lb->setLabel(label);
+            lb->setSkin(currentSkin);
             frame->addView(lb);
          }
       }
@@ -868,20 +934,23 @@ void SurgeGUIEditor::openOrRecreateEditor()
                                             .scene[synth->storage.getPatch().scene_active.val.i]
                                             .osc[current_osc],
                                        &synth->storage);
+   ((COscillatorDisplay*)oscdisplay)->setSkin( currentSkin );
    frame->addView(oscdisplay);
 
    // 150*b - 16 = 434 (b=3)
    patchname =
        new CPatchBrowser(CRect(156, 11, 547, 11 + 28), this, tag_patchname, &synth->storage);
+   ((CPatchBrowser*)patchname)->setSkin( currentSkin );
    ((CPatchBrowser*)patchname)->setLabel(synth->storage.getPatch().name);
    ((CPatchBrowser*)patchname)->setCategory(synth->storage.getPatch().category);
    ((CPatchBrowser*)patchname)->setIDs(synth->current_category_id, synth->patchid);
    ((CPatchBrowser*)patchname)->setAuthor(synth->storage.getPatch().author);
    frame->addView(patchname);
 
-   statuspanel = new CStatusPanel(CRect( 560, 1, 595, 54 ), this, tag_statuspanel, &synth->storage);
+   statuspanel = new CStatusPanel(CRect( 560, 1, 595, 54 ), this, tag_statuspanel, &synth->storage, bitmapStore);
    {
        CStatusPanel *pb = (CStatusPanel *)statuspanel;
+       pb->setSkin( currentSkin );
        pb->setDisplayFeature(CStatusPanel::mpeMode, synth->mpeEnabled);
        pb->setDisplayFeature(CStatusPanel::tuningMode, ! synth->storage.isStandardTuning);
        pb->setEditor(this);
@@ -914,9 +983,181 @@ void SurgeGUIEditor::openOrRecreateEditor()
    {
       Parameter* p = *iter;
 
-      if ((p->posx != 0) && ((p->scene == (current_scene + 1)) || (p->scene == 0)) &&
-          isControlVisible(p->ctrlgroup, p->ctrlgroup_entry) && (p->ctrltype != ct_none))
+      bool paramIsVisible = ((p->scene == (current_scene + 1)) || (p->scene == 0)) &&
+         isControlVisible(p->ctrlgroup, p->ctrlgroup_entry) && (p->ctrltype != ct_none);
+   
+      std::string uiid = p->ui_identifier;
+      bool handledBySkins = false;
+
+      /*
+      ** OK so we basically have two paths here. One which is skin specified, and one which is
+      ** default specified. The skin specified one delegates almost all the decisions to the skin
+      ** engine data structure if it can find it
+      */
+      auto c = currentSkin->controlForUIID(uiid);
+      if( c.get() && paramIsVisible )
       {
+         // borrow from 1.6.6
+         long style = p->ctrlstyle;
+         
+         switch (p->ctrltype)
+         {
+         case ct_decibel:
+         case ct_decibel_narrow:
+         case ct_decibel_narrow_extendable:
+         case ct_decibel_extra_narrow:
+         case ct_decibel_extendable:
+         case ct_freq_mod:
+         case ct_percent_bidirectional:
+         case ct_freq_shift:
+            style |= kBipolar;
+            break;
+         };
+
+         auto parentClassName = c->ultimateparentclassname;
+         handledBySkins = true; // by default assume we are handled
+         
+         // Would be great to change this to a switch by making it an enum. FIXME
+         if( parentClassName == "CSurgeSlider" )
+         {
+            CSurgeSlider* hs =
+               new CSurgeSlider(CPoint(c->x, c->y), style, this, p->id + start_paramtags, true, bitmapStore);
+            hs->setSkin(currentSkin);
+            hs->setMoveRate(p->moverate);
+            if( p->can_temposync() )
+               hs->setTempoSync(p->temposync);
+            hs->setValue(p->get_value_f01());
+            hs->setLabel(p->get_name());
+            hs->setModPresent(synth->isModDestUsed(p->id));
+            hs->setDefaultValue(p->get_default_value_f01());
+
+            if (synth->isValidModulation(p->id, modsource))
+            {
+               hs->setModMode(mod_editor ? 1 : 0);
+               hs->setModValue(synth->getModulation(p->id, modsource));
+               hs->setModCurrent(synth->isActiveModulation(p->id, modsource), synth->isBipolarModulation(modsource));
+            }
+            else
+            {
+               // Even if current modsource isn't modulating me, something else may be
+            }
+            frame->addView(hs);
+            param[i] = hs;
+
+         }
+         else if( parentClassName == "CLFOGui" )
+         {
+            if( p->ctrltype != ct_lfoshape )
+            {
+               // FIXME - warning?
+            }
+            CRect rect(0, 0, c->w, c->h);
+            rect.offset(c->x, c->y);
+            int lfo_id = p->ctrlgroup_entry - ms_lfo1;
+            if ((lfo_id >= 0) && (lfo_id < n_lfos))
+            {
+               CLFOGui* slfo = new CLFOGui(
+                   rect, lfo_id == 0, this, p->id + start_paramtags,
+                   &synth->storage.getPatch().scene[current_scene].lfo[lfo_id], &synth->storage,
+                   &synth->storage.getPatch().stepsequences[current_scene][lfo_id],
+                   bitmapStore);
+               slfo->setSkin( currentSkin );
+               lfodisplay = slfo;
+               frame->addView(slfo);
+               nonmod_param[i] = slfo;
+            }
+         }
+         else if( parentClassName == "CSwitchControl" )
+         {
+            CRect rect(0, 0, c->w, c->h);
+            rect.offset(c->x, c->y);
+
+            // Make this a function on skin
+            auto bmp = currentSkin->backgroundBitmapForControl( c, bitmapStore );
+            if( bmp )
+            {
+               CSwitchControl* hsw = new CSwitchControl(rect, this, p->id + start_paramtags, bmp );
+               hsw->setValue(p->get_value_f01());
+               frame->addView(hsw);
+               nonmod_param[i] = hsw;
+
+               // Carry over this filter type special case from the default control path
+               if( p->ctrltype == ct_filtertype )
+               {
+                  ((CSwitchControl*)hsw)->is_itype = true;
+                  ((CSwitchControl*)hsw)->imax = 3;
+                  ((CSwitchControl*)hsw)->ivalue = p->val.i + 1;
+                  if (fut_subcount[synth->storage.getPatch()
+                                   .scene[current_scene]
+                                   .filterunit[p->ctrlgroup_entry]
+                                   .type.val.i] == 0)
+                     ((CSwitchControl*)hsw)->ivalue = 0;
+
+                  if (p->ctrlgroup_entry == 1)
+                  {
+                     f2subtypetag = p->id + start_paramtags;
+                     filtersubtype[1] = hsw;
+                  }
+                  else
+                  {
+                     f1subtypetag = p->id + start_paramtags;
+                     filtersubtype[0] = hsw;
+                  }
+               }
+
+            }
+            else
+            {
+               std::cout << "Couldn't make CSwitch Control for ID '" << uiid << "'" << std::endl;
+            }
+
+         }
+         else if( parentClassName == "CHSwitch2" )
+         {
+            CRect rect(0, 0, c->w, c->h);
+            rect.offset(c->x, c->y);
+
+            // Make this a function on skin
+            auto bmp = currentSkin->backgroundBitmapForControl( c, bitmapStore );
+            if( bmp )
+            {
+               auto subpixmaps = currentSkin->propertyValue( c, "subpixmaps", "1" );
+               auto rows = currentSkin->propertyValue( c, "rows", "1" );
+               auto cols = currentSkin->propertyValue( c, "columns", "1" );
+               CControl* hsw = new CHSwitch2(rect, this, p->id + start_paramtags,
+                                             std::atoi(subpixmaps.c_str()), c->h,
+                                             std::atoi(rows.c_str()), std::atoi(cols.c_str()),
+                                             bmp, nopoint,
+                                             true); // FIXME - this needs parameterization
+               hsw->setValue(p->get_value_f01());
+               frame->addView(hsw);
+               nonmod_param[i] = hsw;
+            }
+         }
+         else
+         {
+            handledBySkins = false; /* FIXME: currentSkin->fallbackToDefaultSkin() */
+            std::cout << "Was able to get a control for the uiid '" << c->ui_id  << "' class is '" << c->classname << "' upc='" << parentClassName << "'" << std::endl;
+         }
+
+
+         /*
+         switch( parentClass )
+         {
+         case Surge::UI::Skin::Control::CSurgeSlider:
+         case Surge::UI::t lSkin::Control::CHSwitch2:
+         default:
+            std::cout << "UNKNOWN PARENT CLASS " << parentClass <<  std::endl;
+            break;
+         }
+         */
+      }
+
+      if (! handledBySkins && p->posx != 0 && paramIsVisible)
+      {
+         /*
+         **  This is the legacy/1.6.6 codepath
+         */
          long style = p->ctrlstyle;
          /*if(p->ctrlstyle == cs_hori) style = kHorizontal;
          else if(p->ctrlstyle == cs_vert) style = kVertical | kBottom;*/
@@ -1128,6 +1369,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CControl* hsw = new COscMenu(
                 rect, this, tag_osc_menu, &synth->storage,
                 &synth->storage.getPatch().scene[current_scene].osc[current_osc], bitmapStore);
+            ((COscMenu*)hsw)->setSkin(currentSkin);
             hsw->setValue(p->get_value_f01());
             frame->addView(hsw);
          }
@@ -1141,6 +1383,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CControl* m = new CFxMenu(rect, this, tag_fx_menu, &synth->storage,
                                       &synth->storage.getPatch().fx[current_fx],
                                       &synth->fxsync[current_fx], current_fx);
+            ((CFxMenu*)m)->setSkin(currentSkin);
             m->setValue(p->get_value_f01());
             frame->addView(m);
          }
@@ -1190,10 +1433,13 @@ void SurgeGUIEditor::openOrRecreateEditor()
          break;
          case ct_pitch_octave:
          {
+            int oid = IDB_OCTAVES;
+            if( p->ctrlgroup == cg_OSC )
+               oid = IDB_OCTAVES_OSC;
             CRect rect(0, 0, 96, 18);
             rect.offset(p->posx, p->posy + 1);
             CControl* hsw = new CHSwitch2(rect, this, p->id + start_paramtags, 7, 18, 1, 7,
-                                          bitmapStore->getBitmap(IDB_OCTAVES), nopoint, true);
+                                          bitmapStore->getBitmap(oid), nopoint, true);
             rect(1, 0, 91, 14);
             rect.offset(p->posx, p->posy);
             hsw->setMouseableArea(rect);
@@ -1262,10 +1508,13 @@ void SurgeGUIEditor::openOrRecreateEditor()
             int lfo_id = p->ctrlgroup_entry - ms_lfo1;
             if ((lfo_id >= 0) && (lfo_id < n_lfos))
             {
-               CControl* slfo = new CLFOGui(
+               std::cout << "Old School LFOGUI Build" << std::endl;
+               CLFOGui* slfo = new CLFOGui(
                    rect, lfo_id == 0, this, p->id + start_paramtags,
                    &synth->storage.getPatch().scene[current_scene].lfo[lfo_id], &synth->storage,
-                   &synth->storage.getPatch().stepsequences[current_scene][lfo_id]);
+                   &synth->storage.getPatch().stepsequences[current_scene][lfo_id],
+                   bitmapStore);
+               slfo->setSkin( currentSkin );
                lfodisplay = slfo;
                frame->addView(slfo);
                nonmod_param[i] = slfo;
@@ -1301,6 +1550,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CRect rect(0, 0, 43, 14);
             rect.offset(p->posx, p->posy);
             CNumberField* key = new CNumberField(rect, this, p->id + start_paramtags);
+            key->setSkin(currentSkin);
             auto sm = this->synth->storage.getPatch().scenemode.val.i;
 
             switch(sm)
@@ -1329,6 +1579,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CRect rect(0, 0, 43, 14);
             rect.offset(p->posx, p->posy);
             CNumberField* key = new CNumberField(rect, this, p->id + start_paramtags);
+            key->setSkin(currentSkin);
             key->setControlMode(cm_notename);
             // key->altlook = true;
             key->setValue(p->get_value_f01());
@@ -1341,6 +1592,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CRect rect(0, 0, 24, 10);
             rect.offset(p->posx, p->posy);
             CNumberField* pbd = new CNumberField(rect, this, p->id + start_paramtags);
+            pbd->setSkin(currentSkin);
             pbd->altlook = true;
             pbd->setControlMode(cm_pbdepth);
             pbd->setValue(p->get_value_f01());
@@ -1352,6 +1604,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
             CRect rect(0, 0, 43, 14);
             rect.offset(p->posx, p->posy);
             CNumberField* key = new CNumberField(rect, this, p->id + start_paramtags);
+            key->setSkin(currentSkin);
             key->setControlMode(cm_polyphony);
             // key->setLabel("POLY");
             // key->setLabelPlacement(lp_below);
@@ -1367,6 +1620,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
                CSurgeSlider* hs =
                    new CSurgeSlider(CPoint(p->posx, p->posy + p->posy_offset * yofs), style, this,
                                     p->id + start_paramtags, true, bitmapStore);
+               hs->setSkin(currentSkin);
                hs->setModMode(mod_editor ? 1 : 0);
                hs->setModValue(synth->getModulation(p->id, modsource));
                hs->setModPresent(synth->isModDestUsed(p->id));
@@ -1388,6 +1642,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
                // Even if current modsource isn't modulating me, something else may be
                hs->setModPresent(synth->isModDestUsed(p->id));
 
+               hs->setSkin(currentSkin);
                hs->setValue(p->get_value_f01());
                hs->setDefaultValue(p->get_default_value_f01());
                hs->setLabel(p->get_name());
@@ -1396,20 +1651,6 @@ void SurgeGUIEditor::openOrRecreateEditor()
                   hs->setTempoSync(p->temposync);
                frame->addView(hs);
                param[i] = hs;
-
-               /*						if(p->can_temposync() && (style &
-               kHorizontal))
-               {
-               CRect rect(0,0,14,18);
-               rect.offset(p->posx+134,p->posy+5 + p->posy_offset*yofs);
-               CControl *hsw = new
-               gui_switch(rect,this,p->id+start_paramtags+tag_temposyncoffset,bmp_temposync);
-               rect(1,1,11,14);
-               rect.offset(p->posx+134,p->posy+5 + p->posy_offset*yofs);
-               hsw->setMouseableArea(rect);
-               hsw->setValue(p->temposync?1.f:0.f);
-               frame->addView(hsw);
-               }		*/
             }
          }
          break;
@@ -1457,6 +1698,8 @@ void SurgeGUIEditor::openOrRecreateEditor()
    CRect wsize(0, 0, WINDOW_SIZE_X, WINDOW_SIZE_Y);
    aboutbox =
        new CAboutBox(aboutbrect, this, 0, 0, wsize, nopoint, bitmapStore->getBitmap(IDB_ABOUT));
+   ((CAboutBox *)aboutbox)->setSkin(currentSkin);
+   
    frame->addView(aboutbox);
 
    CRect dialogSize(148, 8, 598, 8 + 182);
@@ -1500,26 +1743,26 @@ void SurgeGUIEditor::openOrRecreateEditor()
    patchCategory->setImmediateTextChange( true );
    patchCreator->setImmediateTextChange( true );
    patchComment->setImmediateTextChange( true );
-   
-   patchName->setBackColor(kWhiteCColor);
-   patchCategory->setBackColor(kWhiteCColor);
-   patchCreator->setBackColor(kWhiteCColor);
-   patchComment->setBackColor(kWhiteCColor);
-   
-   patchName->setFontColor(kBlackCColor);
-   patchCategory->setFontColor(kBlackCColor);
-   patchCreator->setFontColor(kBlackCColor);
-   patchComment->setFontColor(kBlackCColor);
 
-   patchName->setFrameColor(kGreyCColor);
-   patchCategory->setFrameColor(kGreyCColor);
-   patchCreator->setFrameColor(kGreyCColor);
-   patchComment->setFrameColor(kGreyCColor);
+   patchName->setBackColor(currentSkin->getColor( "savedialog.textfield.background", kWhiteCColor ));
+   patchCategory->setBackColor(currentSkin->getColor( "savedialog.textfield.background", kWhiteCColor ));
+   patchCreator->setBackColor(currentSkin->getColor( "savedialog.textfield.background", kWhiteCColor ));
+   patchComment->setBackColor(currentSkin->getColor( "savedialog.textfield.background", kWhiteCColor ));
+   
+   patchName->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
+   patchCategory->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
+   patchCreator->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
+   patchComment->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
 
-   CColor bggr(205,206,212);
+   patchName->setFrameColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
+   patchCategory->setFrameColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
+   patchCreator->setFrameColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
+   patchComment->setFrameColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
+
+   CColor bggr = currentSkin->getColor( "savedialog.background", CColor(205,206,212) );
    patchTuningLabel->setBackColor(bggr);
    patchTuningLabel->setFrameColor(bggr);
-   patchTuningLabel->setFontColor(kBlackCColor);
+   patchTuningLabel->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
    
    saveDialog->addView(patchName);
    saveDialog->addView(patchCategory);
@@ -1604,13 +1847,10 @@ bool PLUGIN_API SurgeGUIEditor::open(void* parent, const PlatformType& platformT
 
    bitmapStore.reset(new SurgeBitmaps());
    bitmapStore->setupBitmapsForFrame(nframe);
-
+   currentSkin->reloadSkin(bitmapStore);
    nframe->setZoom(fzf);
-   CScalableBitmap *cbm = bitmapStore->getBitmap(IDB_BG);
-   cbm->setExtraScaleFactor(getZoomFactor());
-   nframe->setBackground(cbm);
-
    frame = nframe;
+
 #if LINUX && TARGET_VST3
    LinuxVST3FrameOpen(frame, parent, platformType);
 #elif LINUX && TARGET_LV2
@@ -1622,7 +1862,7 @@ bool PLUGIN_API SurgeGUIEditor::open(void* parent, const PlatformType& platformT
 #endif
 
 #if TARGET_VST3 || TARGET_LV2
-   _idleTimer = new CVSTGUITimer([this](CVSTGUITimer* timer) { idle(); }, 50, false);
+   _idleTimer = VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer>( new CVSTGUITimer([this](CVSTGUITimer* timer) { idle(); }, 50, false), false );
    _idleTimer->start();
 #endif
 
@@ -1640,6 +1880,7 @@ bool PLUGIN_API SurgeGUIEditor::open(void* parent, const PlatformType& platformT
    ** Register only once (when we open)
    */
    frame->registerKeyboardHook(this);
+   reloadFromSkin();
    openOrRecreateEditor();
 
    if(getZoomFactor() != 100)
@@ -2406,6 +2647,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl* control, CButtonState b
                                                           VSTGUI::COptionMenu::kMultipleCheckStyle );
                   menuStack.top()->addEntry(subMenu, nm );
                   menuStack.push(subMenu);
+                  subMenu->forget();
                   eidStack.push(0);
 
                   /*
@@ -3107,16 +3349,16 @@ bool SurgeGUIEditor::showPatchStoreDialog(patchdata* p,
 {
    if( synth->storage.isStandardTuning )
    {
-       patchTuningLabel->setFontColor(kGreyCColor);
+       patchTuningLabel->setFontColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
        patchTuning->setMouseEnabled(false);
-       patchTuning->setBoxFrameColor(kGreyCColor);
+       patchTuning->setBoxFrameColor(currentSkin->getColor( "savedialog.textfield.border", kGreyCColor ));
        patchTuning->setValue(0);
    }
    else
    {
-       patchTuningLabel->setFontColor(kBlackCColor);
+       patchTuningLabel->setFontColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
        patchTuning->setMouseEnabled(true);
-       patchTuning->setBoxFrameColor(kBlackCColor);
+       patchTuning->setBoxFrameColor(currentSkin->getColor( "savedialog.textfield.foreground", kBlackCColor ));
        patchTuning->setValue(0);
    }
     
@@ -3373,6 +3615,7 @@ void SurgeGUIEditor::showSettingsMenu(CRect &menuRect)
        zid++;
 
        settingsMenu->addEntry(zoomSubMenu, "Zoom" );
+       zoomSubMenu->forget();
        eid++;
     }
 
@@ -3383,6 +3626,7 @@ void SurgeGUIEditor::showSettingsMenu(CRect &menuRect)
     settingsMenu->addEntry(mpeSubMenu, mpeMenuName.c_str());
     eid++;
     mpeSubMenu->forget();
+
 
     COptionMenu *uiOptionsMenu = new COptionMenu(menuRect, 0, 0, 0, 0, VSTGUI::COptionMenu::kNoDrawStyle |
                                                  VSTGUI::COptionMenu::kMultipleCheckStyle );
@@ -3503,13 +3747,26 @@ void SurgeGUIEditor::showSettingsMenu(CRect &menuRect)
                                                           
         });
     did++;
+
     
     settingsMenu->addEntry( dataSubMenu, "Data and Patches");
     eid++;
     dataSubMenu->forget();
 
-    settingsMenu->addSeparator(eid++);
+    auto skinSubMenu = makeSkinMenu(menuRect);
+    settingsMenu->addEntry(skinSubMenu, "Skins" );
+    eid++;
+    skinSubMenu->forget();
 
+#define USE_DEV_MENU 1
+#if USE_DEV_MENU    
+    auto devSubMenu = makeDevMenu(menuRect);
+    settingsMenu->addEntry(devSubMenu, "Dev" );
+    eid++;
+    devSubMenu->forget();
+#endif
+    
+    settingsMenu->addSeparator(eid++);
 
     addCallbackMenu(settingsMenu, "Reach the Developers...", []() {
             Surge::UserInteractions::openURL("https://surge-synthesizer.github.io/feedback");
@@ -3726,6 +3983,327 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeTuningMenu(VSTGUI::CRect &menuRect)
 
     return tuningSubMenu;
 }
+
+VSTGUI::COptionMenu *SurgeGUIEditor::makeSkinMenu(VSTGUI::CRect &menuRect)
+{
+    int tid=0;
+    COptionMenu *skinSubMenu = new COptionMenu(menuRect, 0, 0, 0, 0,
+                                                 VSTGUI::COptionMenu::kNoDrawStyle |
+                                                 VSTGUI::COptionMenu::kMultipleCheckStyle);
+
+    auto defaultNoOp = []() { Surge::UserInteractions::promptError( "Not Implemented Yet", "Sorry" ); };
+
+    auto &db = Surge::UI::SkinDB::get(&(synth->storage));
+    bool hasTests = false;
+    for( auto &entry : db.getAvailableSkins() )
+    {
+       if( entry.name.rfind( "test", 0 ) == 0 )
+       {
+          hasTests = true;
+       }
+       else
+       {
+          addCallbackMenu(skinSubMenu, entry.name,
+                          [this, entry, &db]() {
+                             auto s = db.getSkin(entry);
+                             this->currentSkin = s;
+                             this->bitmapStore.reset(new SurgeBitmaps());
+                             this->bitmapStore->setupBitmapsForFrame(frame);
+                             this->currentSkin->reloadSkin(this->bitmapStore);
+                             reloadFromSkin();
+                             this->synth->refresh_editor = true;
+                             Surge::Storage::updateUserDefaultValue(&(this->synth->storage), "defaultSkin", entry.name );
+                          });
+          tid++;
+       }
+    }
+
+
+    if( hasTests )
+    {
+       COptionMenu *testSM = new COptionMenu(menuRect, 0, 0, 0, 0,
+                                                 VSTGUI::COptionMenu::kNoDrawStyle |
+                                                 VSTGUI::COptionMenu::kMultipleCheckStyle);
+       for( auto &entry : db.getAvailableSkins() )
+       {
+          if( entry.name.rfind( "test", 0 ) == 0 )
+             addCallbackMenu(testSM, entry.name,
+                             [this, entry, &db]() {
+                                auto s = db.getSkin(entry);
+                                this->currentSkin = s;
+                                this->bitmapStore.reset(new SurgeBitmaps());
+                                this->bitmapStore->setupBitmapsForFrame(frame);
+                                this->currentSkin->reloadSkin(this->bitmapStore);
+                                reloadFromSkin();
+                                this->synth->refresh_editor = true;
+                                Surge::Storage::updateUserDefaultValue(&(this->synth->storage), "defaultSkin", entry.name );
+                             });
+
+       }
+       skinSubMenu->addEntry( testSM, "Test Skins" );
+    }
+    
+    skinSubMenu->addSeparator();
+    tid++;
+    
+    addCallbackMenu(skinSubMenu, "Reload current skin",
+                    [this]() {
+                       this->bitmapStore.reset(new SurgeBitmaps());
+                       this->bitmapStore->setupBitmapsForFrame(frame);
+                       this->currentSkin->reloadSkin(this->bitmapStore);
+                       reloadFromSkin();
+                       this->synth->refresh_editor = true;
+                    } );
+    tid++;
+    addCallbackMenu(skinSubMenu, "Rescan for Skins",
+                    defaultNoOp );
+    tid++;
+
+    return skinSubMenu;
+}
+
+void SurgeGUIEditor::reloadFromSkin()
+{
+   if( ! frame || ! bitmapStore.get() )
+      return;
+
+   float dbs = Surge::GUI::getDisplayBackingScaleFactor(getFrame());
+   bitmapStore->setPhysicalZoomFactor(getZoomFactor() * dbs);
+
+   CScalableBitmap *cbm = bitmapStore->getBitmap( IDB_BG );
+   cbm->setExtraScaleFactor(getZoomFactor());
+   frame->setBackground( cbm );
+}
+
+/*
+** The DEV menu is almost always off. @baconpaul just activates it above when he wants
+** to do stuff in the gui. We keep this code kicking around though in case we need it
+** even though it isn't callable in the production UI
+*/
+VSTGUI::COptionMenu *SurgeGUIEditor::makeDevMenu(VSTGUI::CRect &menuRect)
+{
+    int tid=0;
+    COptionMenu *devSubMenu = new COptionMenu(menuRect, 0, 0, 0, 0,
+                                                 VSTGUI::COptionMenu::kNoDrawStyle |
+                                                 VSTGUI::COptionMenu::kMultipleCheckStyle);
+
+    /*
+    ** This code takes a running surge and makes an XML file we can use to bootstrap the layout manager.
+    ** It as used as we transitioned from 1.6.5 to 1.7 to do the first layout file which matched
+    ** surge exactly
+    */
+    auto *st = addCallbackMenu(devSubMenu, "Dump Components to StdOut and Runtime.xml",
+                    [this]()
+                    {
+                       std::ostringstream oss;
+                       auto leafOp =
+                          [this, &oss](CView *v) {
+                             CControl *c = dynamic_cast<CControl *>(v);
+                             if( c )
+                             {
+                                auto tag = c->getTag();
+
+                                // Some cases where we don't want to eject the control
+                                if( tag >= tag_store && tag <= tag_store_tuning )
+                                   return;
+                                if( dynamic_cast<CAboutBox*>( c ) )
+                                   return;
+                                if( dynamic_cast<COptionMenu*>( c ) )
+                                   return;
+                                if( dynamic_cast<CParameterTooltip*>( c ) )
+                                   return;
+                                if( dynamic_cast<CEffectLabel*>( c ) )
+                                   return;
+                                if( c == this->patchTuningLabel )
+                                   return;
+
+                                // OK so we want to eject this one. Lets get to work
+                                Parameter *p = nullptr;
+                                if( tag >= start_paramtags )
+                                {
+                                   p = this->synth->storage.getPatch().param_ptr[tag - start_paramtags];
+                                }
+                                oss << "    <control " ;
+                                if( p )
+                                {
+                                   oss << "ui_identifier=\""  <<  p->ui_identifier << "\"";
+                                }
+                                else if( c->getTag() >= tag_scene_select && c->getTag() < start_paramtags )
+                                {
+                                   oss << "tag_value=\"" << c->getTag() << "\" tag_name=\"" << specialTagToString( (special_tags)(c->getTag()) ) << "\"";
+                                }
+                                else
+                                {
+                                   oss << "special=\"true\" ";
+                                }
+                                auto vs = c->getViewSize();
+                                oss << " x=\"" << vs.left << "\" y=\"" << vs.top
+                                          << "\" w=\"" << vs.getWidth() << "\" h=\"" << vs.getHeight() << "\"";
+
+                                /*
+                                if( p )
+                                   oss << " posx=\"" << p->posx << "\" "
+                                       << " posy=\"" << p->posy << "\" "
+                                       << " posy_offset=\"" << p->posy_offset << "\" ";
+                                */
+                                   
+                                auto dumpBG = [&oss](CControl *a) {
+                                                 auto bg = a->getBackground();
+                                                 auto rd = bg->getResourceDescription();
+                                                 if( rd.type == CResourceDescription::kIntegerType )
+                                                 {
+                                                    ios::fmtflags f(oss.flags());
+                                                    oss << " bg_resource=\"SVG/bmp" << std::setw(5) << std::setfill('0') << rd.u.id << ".svg\" ";
+                                                    oss << " bg_id=\""  << rd.u.id << "\" ";
+                                                    oss.flags(f);
+                                                 }
+                                              };
+                                
+                                if( auto a = dynamic_cast<CHSwitch2 *>(c) )
+                                {
+                                   oss << " class=\"CHSwitch2\" ";
+                                   dumpBG(a);
+                                   oss << " subpixmaps=\"" << a->getNumSubPixmaps()
+                                       << "\" rows=\"" << a->rows
+                                       << "\" columns=\"" << a->columns << "\"";
+                                }
+                                else if( auto a = dynamic_cast<CSurgeSlider *>(c) )
+                                {
+                                   if( p->ctrlstyle & Surge::ParamConfig::kHorizontal )
+                                   {
+                                      if( p->ctrlstyle & kWhite )
+                                         oss << " class=\"light-hslider\"";
+                                      else
+                                         oss << " class=\"dark-hslider\"";
+                                   }
+                                   else
+                                   {
+                                      if( p->ctrlstyle & kWhite )
+                                         oss << " class=\"light-vslider\"";
+                                      else
+                                         oss << " class=\"dark-vslider\"";
+                                   }
+                                      
+                                }
+                                else if( auto a = dynamic_cast<CSwitchControl *>(c) )
+                                {
+                                   oss << " class=\"CSwitchControl\" ";
+                                   dumpBG(a);
+                                }
+                                else if( auto a = dynamic_cast<CModulationSourceButton *>(c) )
+                                {
+                                   oss << " class=\"CModulationSourceButton\" ";
+                                }
+                                else if( auto a = dynamic_cast<CNumberField *>(c) )
+                                {
+                                   oss << " class=\"CNumberField\" ";
+                                   // want to collect controlmode and altlook
+                                }
+                                else if( auto a = dynamic_cast<COscillatorDisplay *>(c) )
+                                {
+                                   oss << " class=\"COscillatorDisplay\" ";
+                                }
+                                else if( auto a = dynamic_cast<CStatusPanel *>(c) )
+                                {
+                                   oss << " class=\"CStatusPanel\" ";
+                                }
+                                else if( auto a = dynamic_cast<CPatchBrowser *>(c) )
+                                {
+                                   oss << " class=\"CPatchBrowser\" ";
+                                }
+                                else if( auto a = dynamic_cast<CSurgeVuMeter *>(c) )
+                                {
+                                   oss << " class=\"CSurgeVuMeter\" ";
+                                }
+                                else if( auto a = dynamic_cast<CLFOGui *>(c) )
+                                {
+                                   oss << " class=\"CLFOGui\" ";
+                                }
+                                else if( auto a = dynamic_cast<CEffectSettings *>(c) )
+                                {
+                                   oss << " class=\"CEffectSettings\" ";
+                                }
+                                else
+                                {
+                                   oss << "rtti_class=\"" << typeid(*c).name() << "\" tag=\"" << tag << "\" ";
+                                }
+                                oss << "/>\n";
+                             }
+                             else
+                             {
+                                // oss << "Something Else " << typeid(*v).name() << std::endl;
+                                // this is always a container and it is recurse by the stack thingy below
+                             }
+                          };
+
+                       std::stack<CView*> stk;
+                       stk.push( this->frame );
+                       oss << "<surge-layout>\n";
+                       oss << "  <globals>\n";
+                       oss << "  </globals\n";
+                       
+                       oss << "  <component-classes>\n";
+                       oss << "    <class name=\"dark-vslider\" parent=\"CSurgeSlider\" orientation=\"vertical\" white=\"false\"/>\n";
+                       oss << "    <class name=\"light-vslider\" parent=\"CSurgeSlider\" orientation=\"vertical\" white=\"true\"/>\n";
+                       oss << "    <class name=\"dark-hslider\" parent=\"CSurgeSlider\" orientation=\"horizontal\" white=\"false\"/>\n";
+                       oss << "    <class name=\"light-hslider\" parent=\"CSurgeSlider\" orientation=\"horizontal\" white=\"true\"/>\n";
+                       oss << "  </component-classes>\n\n";
+                          
+                       oss << "  <controls>\n";
+                       while( ! stk.empty() )
+                       {
+                          auto e = stk.top();
+                          stk.pop();
+                          leafOp(e);
+                          auto c = dynamic_cast<CViewContainer *>(e);
+                          if( c )
+                          {
+                             auto b = stk.size();
+                             c->forEachChild( [&stk](CView *cc) { stk.push(cc); } );
+                             // oss << "Added " << stk.size() - b << " elements" << std::endl;
+                          }
+                       }
+                       oss << "  </controls>" << std::endl;
+                       oss << "</surge-layout>\n";
+
+                       std::cout << oss.str();
+                       std::ofstream of( "runtime.xml" );
+                       of << oss.str();
+                       of.close();
+                    }
+        );
+    tid++;
+
+    addCallbackMenu(devSubMenu, "Show Queried Colors",
+                    [this]()
+                       {
+                          auto qc = this->currentSkin->getQueriedColors();
+                          std::set<std::string> ss( qc.begin(), qc.end() );
+                          std::ostringstream htmls;
+                          htmls << "<html><body><h1>Color Tags</h1>\n<table border=1><tr><th>tag</th><th>value in skin</th></tr>\n";
+                          for( auto s : ss )
+                          {
+                             htmls << "<tr><td>" << s << "</td><td>";
+                             if( this->currentSkin->hasColor(s) )
+                             {
+                                auto c = this->currentSkin->getColor(s,kBlackCColor);
+                                htmls << "#" << std::hex << (int)c.red << (int)c.green << (int)c.blue << std::dec << std::endl;
+                             }
+                             else
+                             {
+                                htmls << "default" << std::endl;
+                             }
+                             htmls << "</td></tr>\n";
+                          }
+                          htmls << "</pre></body></html>\n";
+                          Surge::UserInteractions::showHTML( htmls.str() );
+                       }
+       );
+    tid++;
+
+    return devSubMenu;
+}
+
 
 int SurgeGUIEditor::findLargestFittingZoomBetween(int zoomLow, // bottom of range
                                                   int zoomHigh, // top of range

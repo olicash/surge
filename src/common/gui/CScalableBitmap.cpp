@@ -31,6 +31,7 @@
 #include "nanosvg.h"
 
 using namespace VSTGUI;
+std::atomic<int> CScalableBitmap::instances( 0 );
 
 #if MAC
 static const std::string svgFullFileNameFromBundle(const std::string& filename)
@@ -41,15 +42,19 @@ static const std::string svgFullFileNameFromBundle(const std::string& filename)
    if (url)
    {
       CFStringRef urlStr = CFURLGetString(url);
-      // std::cout << "URLString = " << urlStr << std::flush << std::endl;
+      CFRetain( urlStr ); // "GET" rule https://developer.apple.com/library/archive/documentation/CoreFoundation/Conceptual/CFMemoryMgmt/Concepts/Ownership.html#//apple_ref/doc/uid/20001148-SW1
       const char* csp = CFStringGetCStringPtr(urlStr, kCFStringEncodingUTF8);
       if (csp)
       {
-         std::string resPath(CFStringGetCStringPtr(CFURLGetString(url), kCFStringEncodingUTF8));
+         std::string resPath(csp);
          if (resPath.find("file://") != std::string::npos)
             resPath = resPath.substr(7);
+         CFRelease( urlStr );
+         CFRelease( url );
          return resPath;
       }
+      CFRelease( urlStr );
+      CFRelease( url );
    }
 
    return "";
@@ -98,6 +103,10 @@ CScalableBitmap::CScalableBitmap(CResourceDescription desc, VSTGUI::CFrame* f)
     int id = 0;
     if(desc.type == CResourceDescription::kIntegerType)
         id = (int32_t)desc.u.id;
+
+    instances++;
+    //std::cout << "  Construct CScalableBitmap. instances=" << instances << " id=" << id << std::endl;
+    
 
     resourceID = id;
 
@@ -167,6 +176,48 @@ CScalableBitmap::CScalableBitmap(CResourceDescription desc, VSTGUI::CFrame* f)
     lastSeenZoom = -1;
 }
 
+CScalableBitmap::CScalableBitmap(std::string ifname, VSTGUI::CFrame* f)
+   : CBitmap(CResourceDescription(0)), svgImage(nullptr), frame(f)
+{
+    fname = ifname;
+    
+    instances++;
+    //std::cout << "  Construct CScalableBitmap. instances=" << instances << " fname=" << fname << std::endl;
+
+    int id = 0;
+    resourceID = id;
+
+    svgImage = nsvgParseFromFile(fname.c_str(), "px", 96);
+
+    if (!svgImage)
+    {
+       std::cout << "Unable to load SVG Image " << fname << std::endl;
+    }
+
+    extraScaleFactor = 100;
+    currentPhysicalZoomFactor = 100;
+    lastSeenZoom = -1;
+}
+
+CScalableBitmap::~CScalableBitmap()
+{
+   for (auto const& pair : offscreenCache)
+   {
+      auto val = pair.second;
+      if (val)
+         val->forget();
+   }
+   offscreenCache.clear();
+
+   if( svgImage )
+   {
+      nsvgDelete( svgImage );
+   }
+   instances--;
+   //std::cout << "  Destroy CScalableBitmap. instances=" << instances << " id=" << resourceID << " fn=" << fname << std::endl;
+}
+
+
 #define DUMPR(r)                                                                                   \
    "(x=" << r.getTopLeft().x << ",y=" << r.getTopLeft().y << ")+(w=" << r.getWidth()               \
          << ",h=" << r.getHeight() << ")"
@@ -224,6 +275,7 @@ void CScalableBitmap::draw (CDrawContext* context, const CRect& rect, const CPoi
           offscreenCache.clear();
           lastSeenZoom = currentPhysicalZoomFactor;
        }
+       
 
        CGraphicsTransform tf = CGraphicsTransform().scale(lastSeenZoom / 100.0, lastSeenZoom / 100.0);
        
@@ -413,6 +465,7 @@ void CScalableBitmap::drawSVG(CDrawContext* dc,
             VSTGUI::CPoint p1 = gradXform.inverse().transform(s1);
 
             dc->fillLinearGradient(gp, *cg, p0, p1, evenOdd);
+            cg->forget();
          }
          else
          {

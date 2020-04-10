@@ -10,7 +10,9 @@
 #include <sstream>
 #include <string>
 
-Parameter::Parameter()
+Parameter::Parameter() : posx( PositionHolder::Axis::X ),
+                         posy( PositionHolder::Axis::Y ),
+                         posy_offset( PositionHolder::Axis::YOFF )
 {
    val.i = 0;
    posy_offset = 0;
@@ -129,11 +131,13 @@ void Parameter::set_name(const char* n)
    create_fullname(dispname, fullname, ctrlgroup, ctrlgroup_entry);
 }
 
-Parameter* Parameter::assign(int id,
+Parameter* Parameter::assign(ParameterIDCounter::promise_t idp,
                              int pid,
                              const char* name,
                              const char* dispname,
                              int ctrltype,
+
+                             std::string ui_identifier,
                              int posx,
                              int posy,
                              int scene,
@@ -142,7 +146,8 @@ Parameter* Parameter::assign(int id,
                              bool modulateable,
                              int ctrlstyle)
 {
-   this->id = id;
+   this->id_promise = idp.get();
+   this->id = -1;
    this->param_id_in_scene = pid;
    this->ctrlgroup = ctrlgroup;
    this->ctrlgroup_entry = ctrlgroup_entry;
@@ -151,6 +156,7 @@ Parameter* Parameter::assign(int id,
    this->modulateable = modulateable;
    this->scene = scene;
    this->ctrlstyle = ctrlstyle;
+   strncpy(this->ui_identifier, ui_identifier.c_str(), NAMECHARS );
 
    strncpy(this->name, name, NAMECHARS);
    set_name(dispname);
@@ -407,6 +413,12 @@ void Parameter::set_type(int ctrltype)
       val_max.f = 6;
       val_default.f = 1;
       break;
+   case ct_reverbpredelaytime:
+      valtype = vt_float;
+      val_min.f = -4;
+      val_max.f = 1;
+      val_default.f = -2;
+      break;
    case ct_lforate:
       valtype = vt_float;
       val_min.f = -7;
@@ -549,7 +561,7 @@ void Parameter::set_type(int ctrltype)
    case ct_osccountWT:
       valtype = vt_int;
       val_min.i = 1;
-      val_max.i = 7;
+      val_max.i = 16;
       val_default.i = 1;
       break;
    case ct_scenemode:
@@ -950,6 +962,7 @@ void Parameter::get_display(char* txt, bool external, float ef)
       case ct_envtime:
       case ct_envtime_lfodecay:
       case ct_reverbtime:
+      case ct_reverbpredelaytime:
       case ct_delaymodtime:
          if ((ctrltype == ct_envtime_lfodecay) && (f == val_max.f))
          {
@@ -1114,7 +1127,7 @@ void Parameter::get_display(char* txt, bool external, float ef)
          switch( i + 1 )
          {
          case wst_tanh:
-            sprintf(txt,"tanh");
+            sprintf(txt,"soft");
             break;
          case wst_hard:
             sprintf(txt,"hard");
@@ -1123,7 +1136,7 @@ void Parameter::get_display(char* txt, bool external, float ef)
             sprintf(txt,"asym");
             break;
          case wst_sinus:
-            sprintf(txt,"sin");
+            sprintf(txt,"sine");
             break;
          case wst_digi:
             sprintf(txt,"digi");

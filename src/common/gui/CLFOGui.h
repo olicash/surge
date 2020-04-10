@@ -6,8 +6,12 @@
 #include "SurgeStorage.h"
 #include "CDIBitmap.h"
 #include "DspUtilities.h"
+#include "SkinSupport.h"
+#include "SurgeBitmaps.h"
+#include "CScalableBitmap.h"
 
-class CLFOGui : public VSTGUI::CControl
+
+class CLFOGui : public VSTGUI::CControl, public Surge::UI::SkinConsumingComponnt
 {
 public:
    const static int margin = 2;
@@ -17,6 +21,8 @@ public:
    const static int shadowoffset = 1;
    const static int skugga = 0xff5d5d5d;
    const static int splitpoint = lpsize + 20;
+    
+   void drawtri(VSTGUI::CRect r, VSTGUI::CDrawContext* context, int orientation);
 
    CLFOGui(const VSTGUI::CRect& size,
            bool trigmaskedit,
@@ -24,8 +30,10 @@ public:
            long tag = 0,
            LFOStorage* lfodata = 0,
            SurgeStorage* storage = 0,
-           StepSequencerStorage* ss = 0)
-       : VSTGUI::CControl(size, listener, tag, 0)
+           StepSequencerStorage* ss = 0,
+           std::shared_ptr<SurgeBitmaps> ibms = nullptr)
+      : VSTGUI::CControl(size, listener, tag, 0),
+        bitmapStore( ibms )
    {
       this->lfodata = lfodata;
       this->storage = storage;
@@ -33,17 +41,21 @@ public:
       edit_trigmask = trigmaskedit;
       cdisurf = new CDIBitmap(getWidth() - splitpoint, getHeight());
       controlstate = 0;
+   }
 
-      int bgcol = 0xffff9000;
-      int fgcol = 0xff000000;
+   void resetColorTable()
+   {
+      auto c = skin->getColor( "lfo.waveform.fill", VSTGUI::CColor( 0xFF, 0x90, 0x00 ) );
+      auto d = skin->getColor( "lfo.waveform.wave", VSTGUI::CColor( 0x00, 0x00, 0x00 ) );
+      
       float f_bgcol[4], f_fgcol[4];
       const float sc = (1.f / 255.f);
-      f_bgcol[0] = (bgcol & 0xff) * sc;
-      f_fgcol[0] = (fgcol & 0xff) * sc;
-      f_bgcol[1] = ((bgcol >> 8) & 0xff) * sc;
-      f_fgcol[1] = ((fgcol >> 8) & 0xff) * sc;
-      f_bgcol[2] = ((bgcol >> 16) & 0xff) * sc;
-      f_fgcol[2] = ((fgcol >> 16) & 0xff) * sc;
+      f_bgcol[2] = c.red * sc; // I know we use a different order below - this code has been confused forever
+      f_fgcol[2] = d.red * sc;
+      f_bgcol[1] = c.green  * sc;
+      f_fgcol[1] = d.green* sc;
+      f_bgcol[0] = c.blue * sc;
+      f_fgcol[0] = d.blue * sc;
 
       f_bgcol[0] = powf(f_bgcol[0], 2.2f);
       f_bgcol[1] = powf(f_bgcol[1], 2.2f);
@@ -74,17 +86,23 @@ public:
           coltable[i] = r | (g << 8) | (b << 16) | (a << 24);
 #endif
        }
-#if MAC      
-      coltable[0] = 0x0090ffff;
+
+#if MAC
+      coltable[0] = ( c.blue << 24 ) + ( c.green << 16 ) + ( c.red << 8 ) + 255;
 #else
-      coltable[0] = 0xffff9000;
-#endif
+      coltable[0] = ( 255 << 24 ) + ( c.red << 16 ) + ( c.green << 8 ) + c.blue;
+#endif      
    }
    // virtual void mouse (CDrawContext *pContext, VSTGUI::CPoint &where, long buttons = -1);
    virtual VSTGUI::CMouseEventResult onMouseDown(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons);
    virtual VSTGUI::CMouseEventResult onMouseUp(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons);
    virtual VSTGUI::CMouseEventResult onMouseMoved(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons);
 
+   virtual void setSkin( Surge::UI::Skin::ptr_t s ) override {
+      SkinConsumingComponnt::setSkin(s);
+      resetColorTable();
+   }
+   
    virtual ~CLFOGui()
    {
       delete cdisurf;
@@ -108,6 +126,7 @@ protected:
    SurgeStorage* storage;
    unsigned int coltable[256];
    CDIBitmap* cdisurf;
+   std::shared_ptr<SurgeBitmaps> bitmapStore;
    int tsNum = 4, tsDen = 4;
    
    
