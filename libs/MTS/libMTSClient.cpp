@@ -219,7 +219,7 @@ struct MTSClient
 };
 
 // Exported functions:
-bool MTS_ShouldFilterNote(MTSClient* c,char midinote,char midichannel) {return c?c->shouldFilterNote(midinote&127,channel):false;}
+bool MTS_ShouldFilterNote(MTSClient* c,char midinote,char midichannel) {return c?c->shouldFilterNote(midinote&127,midichannel):false;}
 double MTS_NoteToFrequency(MTSClient* c,char midinote) {return c?c->freq(midinote):(1.0/global.iet[midinote&127]);}
 double MTS_RetuningAsRatio(MTSClient* c,char midinote) {return c?c->freq(midinote)*global.iet[midinote&127]:1.0;}
 double MTS_RetuningInSemitones(MTSClient* c,char midinote) {return ratioToSemitones*log(MTS_RetuningAsRatio(c,midinote));}
