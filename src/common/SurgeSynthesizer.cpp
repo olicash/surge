@@ -253,7 +253,7 @@ void SurgeSynthesizer::playNote(char channel, char key, char velocity, char detu
    if (halt_engine)
       return;
 
-    if (MTS_ShouldFilterNote(mtsclient,key)) return;
+    if (MTS_ShouldFilterNote(mtsclient,key,channel)) return;
 
    // For split/dual
    // MIDI Channel 1 plays the split/dual
