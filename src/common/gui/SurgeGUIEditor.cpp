@@ -25,6 +25,7 @@
 #include "DisplayInfo.h"
 #include "UserDefaults.h"
 #include "SkinSupport.h"
+#include "UIInstrumentation.h"
 
 #include <iostream>
 #include <iomanip>
@@ -161,6 +162,9 @@ std::string specialTagToString( special_tags t )
 
 SurgeGUIEditor::SurgeGUIEditor(void* effect, SurgeSynthesizer* synth, void* userdata) : super(effect)
 {
+#ifdef INSTRUMENT_UI
+   Surge::Debug::record( "SurgeGUIEditor::SurgeGUIEditor" );
+#endif   
    frame = 0;
 
 #if TARGET_VST3
@@ -786,6 +790,9 @@ CRect positionForModulationGrid(modsources entry)
 
 void SurgeGUIEditor::openOrRecreateEditor()
 {
+#ifdef INSTRUMENT_UI
+   Surge::Debug::record( "SurgeGUIEditor::openOrRecreateEditor" );
+#endif   
    if (!synth)
       return;
    assert(frame);
@@ -804,7 +811,8 @@ void SurgeGUIEditor::openOrRecreateEditor()
    
    current_scene = synth->storage.getPatch().scene_active.val.i;
 
-   {
+   CControl *skinTagControl;
+   if( ( skinTagControl = layoutTagWithSkin( tag_osc_select ) ) == nullptr ) {
       CRect rect(0, 0, 75, 13);
       rect.offset(104 - 36, 69);
       CControl* oscswitch = new CHSwitch2(rect, this, tag_osc_select, 3, 13, 1, 3,
@@ -813,7 +821,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
       frame->addView(oscswitch);
    }
 
-   {
+   if( ( skinTagControl = layoutTagWithSkin( tag_fx_select ) ) == nullptr ) {
       CRect rect(0, 0, 119, 51);
       rect.offset(764 + 3, 71);
       CEffectSettings* fc = new CEffectSettings(rect, this, tag_fx_select, current_fx, bitmapStore);
@@ -1784,6 +1792,11 @@ void SurgeGUIEditor::close_editor()
    lfodisplay = 0;
    frame->removeAll(true);
    setzero(param);
+}
+
+VSTGUI::CControl *SurgeGUIEditor::layoutTagWithSkin( int tag )
+{
+   return nullptr;
 }
 
 #if LINUX && TARGET_VST3
@@ -3611,6 +3624,7 @@ void SurgeGUIEditor::showSettingsMenu(CRect &menuRect)
                spawn_miniedit_text(c, 16);
                int newVal = ::atoi(c);
                Surge::Storage::updateUserDefaultValue(&(this->synth->storage), "defaultZoom", newVal);
+               this->setZoomFactor(newVal);
            });
        zid++;
 
@@ -4041,6 +4055,7 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeSkinMenu(VSTGUI::CRect &menuRect)
 
        }
        skinSubMenu->addEntry( testSM, "Test Skins" );
+       testSM->forget();
     }
     
     skinSubMenu->addSeparator();
@@ -4087,6 +4102,14 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeDevMenu(VSTGUI::CRect &menuRect)
                                                  VSTGUI::COptionMenu::kNoDrawStyle |
                                                  VSTGUI::COptionMenu::kMultipleCheckStyle);
 
+#ifdef INSTRUMENT_UI
+    addCallbackMenu(devSubMenu, "Show UI Instrumentation",
+                    []() {
+                       Surge::Debug::report();
+                    }
+       );
+#endif    
+    
     /*
     ** This code takes a running surge and makes an XML file we can use to bootstrap the layout manager.
     ** It as used as we transitioned from 1.6.5 to 1.7 to do the first layout file which matched
