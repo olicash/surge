@@ -1,7 +1,7 @@
 # Build and include libs/midifile
 
 set(LIB_MIDIFILE_DIR libs/midifile)
-set(LIB_MIDIFILE_SRC_DIR "${LIB_MIDIFILE_DIR}/src-library/")
+set(LIB_MIDIFILE_SRC_DIR "${LIB_MIDIFILE_DIR}/src/")
 set(LIB_MIDIFILE_INCLUDES "${LIB_MIDIFILE_DIR}/include/")
 
 set(LIB_MIDIFILE_SOURCES
