@@ -161,7 +161,7 @@ struct MTSClient
                             sysex_ctr++;
                             if ((sysex_ctr&3)==3)
                             {
-                                updateTuning(note,(sysex_value>>14)&127,(sysex_value&16383)/16383.);
+                                if (!(note==0x7F && sysex_value==16383)) updateTuning(note,(sysex_value>>14)&127,(sysex_value&16383)/16383.);
                                 sysex_value=0;sysex_ctr++;
                                 if (++note>=128) state=eCheckSum;
                             }
@@ -171,13 +171,13 @@ struct MTSClient
                             sysex_ctr++;
                             if (!(sysex_ctr&3))
                             {
-                                updateTuning((sysex_value>>21)&127,(sysex_value>>14)&127,(sysex_value&16383)/16383.);
+                                if (!(note==0x7F && sysex_value==16383)) updateTuning((sysex_value>>21)&127,(sysex_value>>14)&127,(sysex_value&16383)/16383.);
                                 sysex_value=0;
                                 if (++note>=numTunings) state=eIgnoring;
                             }
                             break;
                         case eScaleOctOneByte: case eScaleOctOneByteExt:
-                            for (int i=sysex_ctr;i<128;i+=12) updateTuning(i,i,(signed char)b);
+                            for (int i=sysex_ctr;i<128;i+=12) updateTuning(i,i,((double)(b&127)-64.)*0.01);
                             if (++sysex_ctr>=12) state=format==eScaleOctOneByte?eCheckSum:eIgnoring;
                             break;
                         case eScaleOctTwoByte: case eScaleOctTwoByteExt:
@@ -185,7 +185,7 @@ struct MTSClient
                             sysex_ctr++;
                             if (!(sysex_ctr&1))
                             {
-                                double detune=100*((sysex_value&16383)-8192)/(sysex_value>8192?8192:8192);
+                                double detune=((double)(sysex_value&16383)-8192.)/(sysex_value>8192?8191.:8192.);
                                 for (int i=note;i<128;i+=12) updateTuning(i,i,detune);
                                 if (++note>=12) state=format==eScaleOctTwoByte?eCheckSum:eIgnoring;
                             }
