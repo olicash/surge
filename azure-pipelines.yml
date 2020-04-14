@@ -63,15 +63,7 @@ jobs:
     displayName: all - submodule init
 
   - bash: |
-      pushd $AGENT_TEMPDIRECTORY
-      export PREMAKE_MAC=https://github.com/premake/premake-core/releases/download/v5.0.0-alpha13/premake-5.0.0-alpha13-macosx.tar.gz
-      curl -L $PREMAKE_MAC --output premake5.tar.gz
-      tar zxvf premake5.tar.gz
-      popd
-
-      export PATH=$AGENT_TEMPDIRECTORY:$PATH
       ./build-osx.sh --build --verbose
-      ls -alFh target
       ls -alFh products
     condition: variables.isMac
     displayName: macOS - build all assets
@@ -150,13 +142,6 @@ jobs:
     displayName: windows - run unit tests
 
   - bash: |
-      pushd $AGENT_TEMPDIRECTORY
-      export PREMAKE_LINUX=https://github.com/premake/premake-core/releases/download/v5.0.0-alpha13/premake-5.0.0-alpha13-linux.tar.gz
-      curl -L $PREMAKE_LINUX --output premake5.tar.gz
-      tar zxvf premake5.tar.gz
-      export PATH=$AGENT_TEMPDIRECTORY:$PATH
-      popd
-
       sudo apt-get install -y xcb
       sudo apt-get install -y libxcb-util-dev
       sudo apt-get install -y libxcb-cursor-dev
@@ -179,7 +164,7 @@ jobs:
       mkdir -p $XDG_DATA_HOME
       rsync -r --delete "resources/data/" "$XDG_DATA_HOME/surge/"
 
-      ./target/headless/Release/Surge/Surge-Headless
+      ./build/surge-headless
 
 
     condition: and(variables.isLinux,variables.runHeadless)

@@ -824,8 +824,7 @@ void SurgeSynthesizer::programChange(char channel, int value)
 
 void SurgeSynthesizer::updateDisplay()
 {
-#if PLUGGUI
-#else
+#if ! TARGET_AUDIOUNIT
    getParent()->updateDisplay();
 #endif
 }
