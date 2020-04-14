@@ -106,6 +106,7 @@ set(SURGE_COMMON_SOURCES
   libs/xml/tinyxmlparser.cpp
   libs/strnatcmp/strnatcmp.cpp
   libs/filesystem/filesystem.cpp
+  libs/MTS/libMTSclient.cpp
   )
 
 set(SURGE_GUI_SOURCES
@@ -228,6 +229,7 @@ set(SURGE_COMMON_INCLUDES
   libs/xml
   libs/catch2
   libs/strnatcmp
+  Libs/MTS
   src/common
   src/common/dsp
   src/common/thread
