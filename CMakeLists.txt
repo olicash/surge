@@ -824,7 +824,7 @@ if( APPLE )
     TARGET validate-au
     POST_BUILD
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMAND auval -vt aumu VmbA
+    COMMAND auval -v aumu Srge VmbA
     )
 
   if( BUILD_VST2 )
