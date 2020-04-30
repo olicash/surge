@@ -44,7 +44,11 @@ private:
 public:
    SurgeGUIEditor(void* effect, SurgeSynthesizer* synth, void* userdata = nullptr);
    virtual ~SurgeGUIEditor();
+#if TARGET_AUDIOUNIT | TARGET_VST2
+   void idle() override;
+#else
    void idle();
+#endif   
    bool queue_refresh;
    virtual void toggle_mod_editing();
 
@@ -58,7 +62,7 @@ public:
    bool open(void* parent) override;
    void close() override;
 #else
-   virtual bool PLUGIN_API open(void* parent, const VSTGUI::PlatformType& platformType = VSTGUI::kDefaultNative);
+   virtual bool PLUGIN_API open(void* parent, const VSTGUI::PlatformType& platformType = VSTGUI::kDefaultNative) override;
    virtual void PLUGIN_API close() override;
 
    virtual Steinberg::tresult PLUGIN_API onWheel( float distance ) override
@@ -194,6 +198,7 @@ public:
    void mappingFileDropped(std::string fn);
    std::string tuningCacheForToggle = "";
    std::string mappingCacheForToggle = "";
+   std::string tuningToHtml();
    
 private:
    /**
@@ -218,6 +223,8 @@ private:
    bool zoomInvalid;
    int minimumZoom;
 
+   int selectedFX[8];
+   
    std::shared_ptr<SurgeBitmaps> bitmapStore = nullptr;
 
    bool modsource_is_alternate[n_modsources];
@@ -235,12 +242,15 @@ private:
    VSTGUI::CControl* polydisp = nullptr;
    VSTGUI::CControl* oscdisplay = nullptr;
    VSTGUI::CControl* splitkeyControl = nullptr;
-   VSTGUI::CControl* param[1024] = {};
-   VSTGUI::CControl* nonmod_param[1024] = {}; 
+
+   static const int n_paramslots = 1024;
+   VSTGUI::CControl* param[n_paramslots] = {};
+   VSTGUI::CControl* nonmod_param[n_paramslots] = {}; 
    VSTGUI::CControl* gui_modsrc[n_modsources] = {};
    VSTGUI::CControl* metaparam[n_customcontrollers] = {};
    VSTGUI::CControl* lfodisplay = nullptr;
    VSTGUI::CControl* filtersubtype[2] = {};
+   VSTGUI::CControl* fxmenu = nullptr;
 #if MAC || LINUX
 #else
    HWND ToolTipWnd;

@@ -3,8 +3,9 @@
 //-------------------------------------------------------------------------------------------------------
 #pragma once
 #include "vstcontrols.h"
+#include "SkinSupport.h"
 
-class CHSwitch2 : public VSTGUI::CHorizontalSwitch
+class CHSwitch2 : public VSTGUI::CHorizontalSwitch, public Surge::UI::SkinConsumingComponnt
 {
 public:
    CHSwitch2(const VSTGUI::CRect& size,
@@ -35,17 +36,38 @@ public:
    bool dragable;
    bool usesMouseWheel;
 
-   virtual void draw(VSTGUI::CDrawContext* dc);
+   bool lookedForHover = false;
+   CScalableBitmap *hoverBmp = nullptr, *hoverOnBmp = nullptr;
+   bool doingHover = false;
+   float hoverValue = 0.0f;
+   
+   virtual void draw(VSTGUI::CDrawContext* dc) override;
    virtual VSTGUI::CMouseEventResult
    onMouseDown(VSTGUI::CPoint& where,
-               const VSTGUI::CButtonState& buttons); ///< called when a mouse down event occurs
+               const VSTGUI::CButtonState& buttons) override; ///< called when a mouse down event occurs
    virtual VSTGUI::CMouseEventResult
-   onMouseUp(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons); ///< called when a mouse up event occurs
+   onMouseUp(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override; ///< called when a mouse up event occurs
    virtual VSTGUI::CMouseEventResult
    onMouseMoved(VSTGUI::CPoint& where,
-                const VSTGUI::CButtonState& buttons); ///< called when a mouse move event occurs
+                const VSTGUI::CButtonState& buttons) override; ///< called when a mouse move event occurs
    virtual bool
-   onWheel (const VSTGUI::CPoint& where, const float& distance, const VSTGUI::CButtonState& buttons); ///< called when scrollwheel events occurs    
+   onWheel (const VSTGUI::CPoint& where, const float& distance, const VSTGUI::CButtonState& buttons) override; ///< called when scrollwheel events occurs
+
+   virtual VSTGUI::CMouseEventResult onMouseEntered (VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override {
+      // disable hand as we move to hovertasticism
+      // getFrame()->setCursor( VSTGUI::kCursorHand );
+      doingHover = true;
+      hoverValue = -1;
+      return VSTGUI::kMouseEventHandled;
+   }
+   virtual VSTGUI::CMouseEventResult onMouseExited (VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override {
+      // getFrame()->setCursor( VSTGUI::kCursorDefault );
+      doingHover = false;
+      invalid();
+      return VSTGUI::kMouseEventHandled;
+   }
+
+   
    CLASS_METHODS(CHSwitch2, VSTGUI::CControl)
    void setUsesMouseWheel(bool wheel);
 };

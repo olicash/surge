@@ -61,10 +61,10 @@ void create_fullname(char* dn, char* fn, ControlGroup ctrlgroup, int ctrlgroup_e
    switch (ctrlgroup)
    {
    case cg_OSC:
-      sprintf(prefix, "Osc%i", ctrlgroup_entry + 1);
+      sprintf(prefix, "Osc %i", ctrlgroup_entry + 1);
       break;
    case cg_FILTER:
-      sprintf(prefix, "F%i", ctrlgroup_entry + 1);
+      sprintf(prefix, "Filter %i", ctrlgroup_entry + 1);
       break;
    case cg_ENV:
       if (ctrlgroup_entry)
@@ -76,9 +76,9 @@ void create_fullname(char* dn, char* fn, ControlGroup ctrlgroup, int ctrlgroup_e
    {
       int a = ctrlgroup_entry + 1 - ms_lfo1;
       if (a > 6)
-         sprintf(prefix, "SLFO%i", a - 6);
+         sprintf(prefix, "Scene LFO %i", a - 6);
       else
-         sprintf(prefix, "LFO%i", a);
+         sprintf(prefix, "LFO %i", a);
    }
    break;
    case cg_FX:
@@ -672,6 +672,12 @@ void Parameter::set_type(int ctrltype)
       valtype = vt_int;
       val_default.i = 0;
       break;
+   case ct_flangerchord:
+      val_min.i = 0;
+      val_max.i = 12;
+      valtype = vt_int;
+      val_default.i = 0;
+      break;
    default:
    case ct_none:
       sprintf(dispname, "-");
@@ -911,7 +917,7 @@ std::string Parameter::tempoSyncNotationValue(float f)
         else
         {
             char tmp[1024];
-            snprintf(tmp, 1024, "1/%0.d", (int)d, d );
+            snprintf(tmp, 1024, "1/%d", (int)d );
             nn = tmp;
         }
     }
@@ -1230,6 +1236,56 @@ void Parameter::get_display(char* txt, bool external, float ef)
          sprintf( txt, "%s %s", types.c_str(), typew.c_str() );
       }
          break;
+      case ct_flangerchord:
+      {
+         int mode = i;
+
+         std::string types;
+         switch( mode )
+         {
+         case 0:
+            types = "unison";
+            break;
+         case 1:
+            types = "octaves";
+            break;
+         case 2:
+            types = "min 2nds";
+            break;
+         case 3:
+            types = "2nds";
+            break;
+         case 4:
+            types = "diminished";
+            break;
+         case 5:
+            types = "augmented";
+            break;
+         case 6:
+            types = "4ths";
+            break;
+         case 7:
+            types = "tritones";
+            break;
+         case 8:
+            types = "5ths";
+            break;
+         case 9:
+            types = "major";
+            break;
+         case 10:
+            types = "minor";
+            break;
+         case 11:
+            types = "dominant";
+            break;
+         case 12:
+            types = "maj 7";
+            break;
+         }
+         sprintf( txt, "%s", types.c_str() );
+      }
+         break;
       default:
          sprintf(txt, "%i", i);
          break;
@@ -1405,14 +1461,14 @@ void Parameter::morph(Parameter* a, Parameter* b, float x)
 {
    if ((a->valtype == vt_float) && (b->valtype == vt_float) && (a->ctrltype == b->ctrltype))
    {
-      memcpy(this, a, sizeof(Parameter));
+      memcpy((void*)this, (void*)a, sizeof(Parameter));
       val.f = (1 - x) * a->val.f + x * b->val.f;
    }
    else
    {
       if (x > 0.5)
-         memcpy(this, b, sizeof(Parameter));
+         memcpy((void*)this, (void*)b, sizeof(Parameter));
       else
-         memcpy(this, a, sizeof(Parameter));
+         memcpy((void*)this, (void*)a, sizeof(Parameter));
    }
 }

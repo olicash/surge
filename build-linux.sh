@@ -52,15 +52,14 @@ run_cmake()
 {
     mkdir -p build
     cmake . -Bbuild
-    touch cmake-stamp
 }
 
 run_cmake_if()
 {
-    if [[ CMakeLists.txt -nt cmake-stamp ]]; then
+    if [[ ! -f build/CMakeCache.txt ]]; then
         run_cmake
     fi
-    if [[ ! -d build ]]; then
+    if [[ CMakeLists.txt -nt build/CMakeCache.txt ]]; then
         run_cmake
     fi
 }
@@ -68,17 +67,19 @@ run_cmake_if()
 run_clean()
 {
     if [[ -d build ]]; then
-        cd build 
+        pushd build 
         make clean
+        popd
     fi
 }
 
 run_build()
 {
     local flavor=$1
-    cd build
+    pushd build
     make -j 2 $flavor
-  
+    popd
+
     build_suc=$?
     if [[ $build_suc = 0 ]]; then
         echo ${GREEN}Build of ${flavor} succeeded${NC}
@@ -94,7 +95,7 @@ run_builds()
 {
     if [ ! -z "$option_vst2" ]; then
         run_cmake_if
-        run_build "surge-vst2"
+        run_build "Surge.vst2"
     fi
 
     if [ ! -z "$option_vst3" ]; then
@@ -155,7 +156,7 @@ run_clean_all()
     run_clean_builds
 
     echo "Cleaning additional assets"
-    rm -rf Makefile surge-vst2.make surge-vst3.make surge-lv2.make surge-headless.make build_logs target obj cmake-stamp build
+    rm -rf target products build
 }
 
 run_uninstall()
@@ -230,7 +231,7 @@ fi
 
 if [ -z "$option_debug" ]; then
     config="config=release_x64"
-    vst2_src_path="build/libsurge-vst2.so"
+    vst2_src_path="products/Surge.so"
     vst3_src_path="products/Surge.vst3"
     lv2_bundle_name="Surge.lv2"
     lv2_src_path="products/$lv2_bundle_name"

@@ -616,10 +616,11 @@ public:
 
    virtual int get_ringout_decay() override
    {
-      return 1024;
+      return ringout_value;
    }
 
 private:
+   int ringout_value = -1;
    InterpDelay idels[2];
 
    float lfophase[2][COMBS_PER_CHANNEL], longphase;
@@ -634,4 +635,6 @@ private:
    const static int LFO_TABLE_MASK=LFO_TABLE_SIZE-1;
    float sin_lfo_table[LFO_TABLE_SIZE];
    float saw_lfo_table[LFO_TABLE_SIZE]; // don't make it analytic since I want to smooth the edges
+   float panL_table[LFO_TABLE_SIZE];
+   float panR_table[LFO_TABLE_SIZE];
 };

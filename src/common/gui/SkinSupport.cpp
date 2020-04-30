@@ -8,6 +8,7 @@
 #include "UserInteractions.h"
 #include "UserDefaults.h"
 #include "UIInstrumentation.h"
+#include "CScalableBitmap.h"
 
 #if LINUX
 #include <experimental/filesystem>
@@ -18,6 +19,7 @@
 #endif
 
 #include <iostream>
+#include <iomanip>
 
 #if !WINDOWS
 namespace fs = std::experimental::filesystem;
@@ -27,6 +29,9 @@ namespace Surge
 {
 namespace UI
 {
+
+const std::string Skin::defaultImageIDPrefix = "DEFAULT/";
+   
 SkinDB& Surge::UI::SkinDB::get(SurgeStorage* s)
 {
    static SkinDB instance(s);
@@ -384,6 +389,11 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
                int idx = std::atoi(d.path().generic_string().c_str() + pos + 3);
                bitmapStore->loadBitmapByPathForID(d.path().generic_string(), idx);
             }
+            else
+            {
+               std::string id = defaultImageIDPrefix + d.path().filename().generic_string();
+               bitmapStore->loadBitmapByPathForStringID(d.path().generic_string(), id);
+            }
          }
       }
    }
@@ -589,6 +599,63 @@ CScalableBitmap *Skin::backgroundBitmapForControl( Skin::Control::ptr_t c, std::
       }
    }
    return bmp;
+}
+
+CScalableBitmap *Skin::hoverBitmapOverlayForBackgroundBitmap( Skin::Control::ptr_t c, CScalableBitmap *b, std::shared_ptr<SurgeBitmaps> bitmapStore, HoverType t )
+{
+   if( ! bitmapStore.get() )
+   {
+      return nullptr;
+   }
+   if( c.get() )
+   {
+      std::cout << "should ask control if it has an opinoin" << std::endl;
+   }
+   if( ! b )
+   {
+      return nullptr;
+   }
+   std::ostringstream sid;
+   if( b->resourceID < 0 )
+   {
+      // we got a skin
+      auto pos = b->fname.find( "bmp00" );
+      if( pos != std::string::npos )
+      {
+         auto b4 = b->fname.substr( 0, pos );
+         auto ftr = b->fname.substr( pos + 3 );
+
+         switch(t)
+         {
+         case HOVER:
+            sid << defaultImageIDPrefix << "hover" << ftr;
+            break;
+         case HOVER_OVER_ON:
+            sid << defaultImageIDPrefix << "hoverOn" << ftr;
+            break;
+         }
+         auto bmp = bitmapStore->getBitmapByStringID( sid.str() );
+         if( bmp )
+            return bmp;
+      }
+   }
+   else
+   {
+      switch(t)
+      {
+      case HOVER:
+         sid << defaultImageIDPrefix << "hover" << std::setw(5) << std::setfill('0') << b->resourceID << ".svg";
+         break;
+      case HOVER_OVER_ON:
+         sid << defaultImageIDPrefix << "hoverOn" << std::setw(5) << std::setfill('0') << b->resourceID << ".svg";
+         break;
+      }
+      auto bmp = bitmapStore->getBitmapByStringID( sid.str() );
+      if( bmp )
+         return bmp;
+   }
+
+   return nullptr;
 }
 
 } // namespace UI

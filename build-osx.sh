@@ -60,6 +60,9 @@ not listed here? Feel free to add one and send in a Pull Request!
 
 The default behaviour without arguments is to clean and rebuild everything.
 
+Increasingly, build-osx.sh is just a convenience wrapper on running cmake + xcode. If you want
+you can do almost all the core things here from the xcode project cmake ejects.
+
 Options are:
         --verbose                Verbose output
 
@@ -84,6 +87,7 @@ NC=`tput init`
 
 prerequisite_check()
 {
+
     if [ ! -f vst3sdk/LICENSE.txt ]; then
         echo
         echo ${RED}ERROR: You have not gotten the submodules required to build Surge. Run the following command to get them.${NC}
@@ -97,20 +101,17 @@ prerequisite_check()
         echo
         echo ${RED}ERROR: You do not have cmake on your path${NC}
         echo
-	echo Please install cmake. "brew install cmake" or visit https://cmake.org
+  	    echo Please install cmake. "brew install cmake" or visit https://cmake.org
         echo
         exit 1
     fi
 
-    if [[ ( ! -z $SURGE_USE_VECTOR_SKIN ) && ( ! -d assets/${SURGE_USE_VECTOR_SKIN}/exported ) ]]; then
+    if [ ! $(which xcpretty) ]; then
         echo
-        echo ${RED}SURGE_USE_VECTOR_SKIN does not point to assets${NC}
+        echo ${GREEN}You will get better output if you `brew install xcpretty`${NC}
         echo
-        echo SURGE_USE_VECTOR_SKIN should be the name of an asset sub-dir which contains the directory
-        echo exported. Example values are 'original-vector' or 'classic-vector'
-        echo
-        exit 1
     fi
+
 }
 
 
@@ -122,38 +123,6 @@ run_clean()
     xcodebuild clean -configuration Release -project build/Surge.xcodeproj/ -target $flavor
 }
 
-run_build()
-{
-    flavor=$1
-    mkdir -p build_logs
-
-    echo
-    echo Building surge-${flavor} with output in build_logs/build_${flavor}.log
-
-    # Don't let TEE eat my return status
-    set -o pipefail
-    if [[ -z "$OPTION_verbose" ]]; then
-    	xcodebuild build -configuration Release -project surge-${flavor}.xcodeproj > build_logs/build_${flavor}.log
-    else
-    	xcodebuild build -configuration Release -project surge-${flavor}.xcodeproj | tee build_logs/build_${flavor}.log
-    fi
-
-    build_suc=$?
-    set +o pipefail
-
-    if [[ $build_suc = 0 ]]; then
-        echo ${GREEN}Build of surge-${flavor} succeeded${NC}
-    else
-        echo
-        echo ${RED}** Build of ${flavor} failed**${NC}
-        grep -i ": error" build_logs/build_${flavor}.log
-        echo
-        echo Complete information is in build_logs/build_${flavor}.log
-
-        exit 2
-    fi
-}
-
 run_cmake_build()
 {
     target=$1
@@ -163,7 +132,14 @@ run_cmake_build()
     # Don't let TEE eat my return status
     mkdir -p build
     cmake -GXcode -Bbuild
-    xcodebuild build -configuration Release -project build/Surge.xcodeproj -target ${target}
+
+    if [ $(which xcpretty) ]; then
+        set -o pipefail && xcodebuild build -configuration Release -project build/Surge.xcodeproj -target ${target} | xcpretty
+    else
+        xcodebuild build -configuration Release -project build/Surge.xcodeproj -target ${target}
+    fi
+
+
 
     build_suc=$?
 
@@ -177,91 +153,24 @@ run_cmake_build()
     fi
 }
 
-run_build_headless()
-{
-    mkdir -p build_logs
-
-    echo
-    echo Building surge-headless with output in build_logs/build_headless.log
-
-    mkdir -p build
-    cmake -GXcode -Bbuild
-
-    # Don't let TEE eat my return status
-    set -o pipefail
-    if [[ -z "$OPTION_verbose" ]]; then
-        xcodebuild build -configuration Release \
-                         -project build/Surge.xcodeproj > \
-                         build_logs/build_headless.log
-    else
-        xcodebuild build -configuration Release \
-                         -project build/Surge.xcodeproj | \
-                         tee build_logs/build_headless.log
-    fi
-
-    build_suc=$?
-    set +o pipefail
-
-    if [[ $build_suc = 0 ]]; then
-        echo ${GREEN}Build of surge-headless succeeded${NC}
-    else
-        echo
-        echo ${RED}** Build of headless failed**${NC}
-        grep -i ": error" build_logs/build_headless.log
-        echo
-        echo Complete information is in build_logs/build_headless.log
-
-        exit 2
-    fi
-}
-
 default_action()
 {
-    if [ -d "surge-vst2.xcodeproj" ]; then
-        run_clean "vst2"
-        run_cmake_build "Surge.vst2"
-    fi
-
-    # FIXME
-    # run_clean "vst3"
-    run_cmake_build "Surge.vst3"
-
-    # FIXME
-    # run_clean "au"
-    run_cmake_build "Surge.component"
+    run_cmake_build "all-components"
 }
 
 run_all_builds()
 {
-    if [ -d "surge-vst2.xcodeproj" ]; then
-        run_build "vst2"
-    fi
-
-    run_cmake_build "Surge.vst3"
-    run_cmake_build "Surge.component"
-    run_build_headless
+    default_action
 }
 
 run_install_local()
 {
-    rsync -r --delete "resources/data/" "$HOME/Library/Application Support/Surge/"
-
-    if [ -d "surge-vst2.xcodeproj" ]; then
-        rsync -r --delete "products/Surge.vst/" ~/Library/Audio/Plug-Ins/VST/Surge.vst/
-    fi
-    
-    rsync -r --delete "products/Surge.component/" ~/Library/Audio/Plug-Ins/Components/Surge.component/
-    rsync -r --delete "products/Surge.vst3/" ~/Library/Audio/Plug-Ins/VST3/Surge.vst3/
+    run_cmake_build "install-everything-local"
 }
 
 run_build_validate_au()
 {
-    run_cmake_build "Surge.component"
-
-    rsync -r --delete "resources/data/" "$HOME/Library/Application Support/Surge/"
-    rsync -r --delete "products/Surge.component/" ~/Library/Audio/Plug-Ins/Components/Surge.component/
-
-    auval -vt aumu VmbA
+    run_cmake_build "validate-au"
 }
 
 run_hosting_au()
@@ -302,18 +211,12 @@ run_reaper_vst3()
 
 run_build_install_vst2()
 {
-    run_cmake_build "Surge.vst2"
-
-    rsync -r --delete "resources/data/" "$HOME/Library/Application Support/Surge/"
-    rsync -r --delete "products/Surge.vst/" ~/Library/Audio/Plug-Ins/VST/Surge.vst/
+    run_cmake_build "install-vst2-local"
 }
 
 run_build_install_vst3()
 {
-    run_cmake_build "Surge.vst3"
-
-    rsync -r --delete "resources/data/" "$HOME/Library/Application Support/Surge/"
-    rsync -r --delete "products/Surge.vst3/" ~/Library/Audio/Plug-Ins/VST3/Surge.vst3/
+    run_cmake_build "install-vst3-local"
 }
 
 run_clean_builds()
@@ -331,7 +234,7 @@ run_clean_all()
     run_clean_builds
 
     echo "Cleaning additional assets (directories, XCode, etc)"
-    rm -rf Surge.xcworkspace *xcodeproj target products build_logs obj build fxbuild
+    rm -rf build products
 }
 
 run_uninstall_surge()
@@ -430,11 +333,10 @@ case $command in
         run_build_install_vst3
         ;;
     --build-headless)
-        run_build_headless
+        run_cmake_build "surge-headless"
         ;;
     --run-headless)
-        run_build_headless
-        ./build/Release/surge-headless 
+        run_cmake_build "run-headless"
         ;;
     --clean)
         run_clean_builds

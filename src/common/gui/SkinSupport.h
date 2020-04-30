@@ -176,6 +176,15 @@ public:
    }
 
    CScalableBitmap *backgroundBitmapForControl( Skin::Control::ptr_t c, std::shared_ptr<SurgeBitmaps> bitmapStore );
+
+   typedef enum {
+      HOVER,
+      HOVER_OVER_ON,
+   } HoverType;
+
+   CScalableBitmap *hoverBitmapOverlayForBackgroundBitmap( Skin::Control::ptr_t c, CScalableBitmap *b, std::shared_ptr<SurgeBitmaps> bitmapStore, HoverType t );
+
+   static const std::string defaultImageIDPrefix;
    
 private:
    static std::atomic<int> instances;
@@ -253,8 +262,16 @@ public:
    virtual ~SkinConsumingComponnt() {
    }
    virtual void setSkin( Skin::ptr_t s ) { skin = s; }
+   virtual void setSkin( Skin::ptr_t s, std::shared_ptr<SurgeBitmaps> b ) {
+      skin = s;
+      associatedBitmapStore = b;
+   }
+   virtual void setAssociatedSkinControl( Skin::Control::ptr_t c ) { skinControl = c; };
+   virtual void setAssociatedBitmapStore( std::shared_ptr<SurgeBitmaps> b ) { associatedBitmapStore = b; }
 protected:
-   Skin::ptr_t skin;
+   Skin::ptr_t skin = nullptr;
+   Skin::Control::ptr_t skinControl = nullptr;
+   std::shared_ptr<SurgeBitmaps> associatedBitmapStore = nullptr;
 };
 }
 }

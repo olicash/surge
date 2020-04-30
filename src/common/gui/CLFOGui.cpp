@@ -959,9 +959,9 @@ CMouseEventResult CLFOGui::onMouseDown(CPoint& where, const CButtonState& button
                assert((i >= 0) && (i < n_stepseqsteps));
             }
             ss->steps[n_stepseqsteps - 1] = t;
-            ss->trigmask = ( ((ss->trigmask & 0x000000000000fffe) >> 1) | ((ss->trigmask & 1) << 15) & 0xffff) |
-               ( ((ss->trigmask & 0x00000000fffe0000) >> 1) | ((ss->trigmask & 0x10000) << 15) & 0xffff0000 ) |
-               ( ((ss->trigmask & 0x0000fffe00000000) >> 1) | ((ss->trigmask & 0x100000000) << 15) & 0xffff00000000 );
+            ss->trigmask = ( ((ss->trigmask & 0x000000000000fffe) >> 1) | (((ss->trigmask & 1) << 15) & 0xffff)) |
+               ( ((ss->trigmask & 0x00000000fffe0000) >> 1) | (((ss->trigmask & 0x10000) << 15) & 0xffff0000 )) |
+               ( ((ss->trigmask & 0x0000fffe00000000) >> 1) | (((ss->trigmask & 0x100000000) << 15) & 0xffff00000000 ));
 
             invalid();
             return kMouseDownEventHandledButDontNeedMovedOrUpEvents;
@@ -975,9 +975,9 @@ CMouseEventResult CLFOGui::onMouseDown(CPoint& where, const CButtonState& button
                assert((i >= 0) && (i < n_stepseqsteps));
             }
             ss->steps[0] = t;
-            ss->trigmask = ( ((ss->trigmask & 0x0000000000007fff) << 1) | ((ss->trigmask & 0x0000000000008000) >> 15) & 0xffff ) |
-               ( ((ss->trigmask & 0x000000007fff0000) << 1) | ((ss->trigmask & 0x0000000080000000) >> 15) & 0xffff0000 )|
-               ( ((ss->trigmask & 0x00007fff00000000) << 1) | ((ss->trigmask & 0x0000800000000000) >> 15) & 0xffff00000000 );
+            ss->trigmask = ( ((ss->trigmask & 0x0000000000007fff) << 1) | (((ss->trigmask & 0x0000000000008000) >> 15) & 0xffff )) |
+               ( ((ss->trigmask & 0x000000007fff0000) << 1) | (((ss->trigmask & 0x0000000080000000) >> 15) & 0xffff0000 ))|
+               ( ((ss->trigmask & 0x00007fff00000000) << 1) | (((ss->trigmask & 0x0000800000000000) >> 15) & 0xffff00000000 ));
             invalid();
             return kMouseDownEventHandledButDontNeedMovedOrUpEvents;
          }
@@ -1073,6 +1073,25 @@ CMouseEventResult CLFOGui::onMouseUp(CPoint& where, const CButtonState& buttons)
 
 CMouseEventResult CLFOGui::onMouseMoved(CPoint& where, const CButtonState& buttons)
 {
+   if (rect_shapes.pointInside(where))
+   {
+      getFrame()->setCursor( VSTGUI::kCursorHand );
+   }
+   else if (ss && lfodata->shape.val.i == ls_stepseq && (
+               rect_steps.pointInside(where) ||
+               rect_steps_retrig.pointInside(where) ||
+               ss_shift_left.pointInside(where) ||
+               ss_shift_right.pointInside(where) ||
+               rect_ls.pointInside(where) ||
+               rect_le.pointInside(where)
+               ))
+   {
+      getFrame()->setCursor( VSTGUI::kCursorHand );
+   }
+   else
+   {
+      getFrame()->setCursor( VSTGUI::kCursorDefault );
+   }
    if (controlstate == cs_shape)
    {
       for (int i = 0; i < n_lfoshapes; i++)

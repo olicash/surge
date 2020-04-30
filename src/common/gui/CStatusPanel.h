@@ -40,8 +40,10 @@ public:
         editor = e;
     }
     
-    virtual void draw(VSTGUI::CDrawContext* dc);
-    VSTGUI::CMouseEventResult onMouseDown(VSTGUI::CPoint& where, const VSTGUI::CButtonState& button);
+    virtual void draw(VSTGUI::CDrawContext* dc) override;
+    VSTGUI::CMouseEventResult onMouseDown(VSTGUI::CPoint& where, const VSTGUI::CButtonState& button) override;
+
+    virtual VSTGUI::CMouseEventResult onMouseMoved( VSTGUI::CPoint &where, const VSTGUI::CButtonState &buttons ) override;
 
     virtual VSTGUI::DragOperation onDragEnter(VSTGUI::DragEventData data) override
     {

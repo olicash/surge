@@ -7,10 +7,13 @@
 	branch = surge
 [submodule "libs/midifile"]
 	path = libs/midifile
-	url = git@github.com:craigsapp/midifile.git
+	url = https://github.com/craigsapp/midifile.git
 [submodule "libs/nanosvg"]
 	path = libs/nanosvg
-	url = git@github.com:memononen/nanosvg.git
+	url = https://github.com/memononen/nanosvg.git
 [submodule "libs/lv2"]
 	path = libs/lv2
-	url = git@github.com:lv2/lv2.git
+	url = https://github.com/drobilla/lv2.git
+[submodule "libs/tuning-library"]
+	path = libs/tuning-library
+	url = https://github.com/surge-synthesizer/tuning-library

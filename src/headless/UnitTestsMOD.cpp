@@ -194,7 +194,7 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
                               REQUIRE( sturns[2].second == 0 );
                               REQUIRE( sturns[3].first == Approx( a + d + sustime ).margin( 0.01 ) );
                               REQUIRE( sturns[3].second == -1 );
-                              if( r_s == 0 || s > 0.1 && r > 0.05 ) // if we are in the non-linear releases at low sustain we get there early
+                              if( r_s == 0 || ( s > 0.1 && r > 0.05 ) ) // if we are in the non-linear releases at low sustain we get there early
                               {
                                  REQUIRE( sturns[4].first == Approx( a + d + sustime + r ).margin( ( r_s == 0 ? 0.01 : ( r * 0.1 ) ) ) );
                                  REQUIRE( sturns[4].second == 0 );
@@ -582,7 +582,7 @@ TEST_CASE( "Pitch Bend and Tuning", "[mod][tun]" )
       for( auto sclf : testScales )
       {
          INFO( "Retuning pitch bend to " << sclf );
-         Surge::Storage::Scale s = Surge::Storage::readSCLFile("sclf" );
+         auto s = Tunings::readSCLFile( sclf );
          surge->storage.retuneToScale(s);
          for( int tests=0; tests<20; ++tests )
          {
