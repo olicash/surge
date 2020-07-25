@@ -284,7 +284,7 @@ const char em_abberations[n_em_type][16] = {"Digital", "Analog"};
 struct MidiKeyState
 {
    int keystate;
-   char lastdetune;
+   float lastdetune;
 };
 
 struct MidiChannelState

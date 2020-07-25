@@ -67,7 +67,7 @@ public:
 public:
    SurgeSynthesizer(PluginLayer* parent, std::string suppliedDataPath="");
    virtual ~SurgeSynthesizer();
-   void playNote(char channel, char key, char velocity, char detune);
+   void playNote(char channel, char key, char velocity, float detune);
    void releaseNote(char channel, char key, char velocity);
    void releaseNotePostHoldCheck(int scene, char channel, char key, char velocity);
    void pitchBend(char channel, int value);
@@ -104,7 +104,7 @@ public:
    bool loadFx(bool initp, bool force_reload_all);
    bool loadOscalgos();
    bool load_fx_needed;
-   void playVoice(int scene, char channel, char key, char velocity, char detune);
+   void playVoice(int scene, char channel, char key, char velocity, float detune);
    void releaseScene(int s);
    int calculateChannelMask(int channel, int key);
    void softkillVoice(int scene);

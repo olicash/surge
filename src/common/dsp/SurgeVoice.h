@@ -47,7 +47,7 @@ public:
 
    bool process_block(QuadFilterChainState&, int);
    void GetQFB(); // Get the updated registers from the QuadFB
-   void legato(int key, int velocity, char detune);
+   void legato(int key, int velocity, float detune);
    void switch_toggled();
    void freeAllocatedElements();
    int osctype[n_oscs];

@@ -196,7 +196,7 @@ SurgeVoice::~SurgeVoice()
 {
 }
 
-void SurgeVoice::legato(int key, int velocity, char detune)
+void SurgeVoice::legato(int key, int velocity, float detune)
 {
    if (state.portaphase > 1)
       state.portasrc_key = state.getPitch();

@@ -248,7 +248,7 @@ int SurgeSynthesizer::calculateChannelMask(int channel, int key)
    return channelmask;
 }
 
-void SurgeSynthesizer::playNote(char channel, char key, char velocity, char detune)
+void SurgeSynthesizer::playNote(char channel, char key, char velocity, float detune)
 {
    if (halt_engine)
       return;
@@ -443,7 +443,7 @@ int SurgeSynthesizer::getMpeMainChannel(int voiceChannel, int key)
    return voiceChannel;
 }
 
-void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocity, char detune)
+void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocity, float detune)
 {
    if (getNonReleasedVoices(scene) == 0)
    {
