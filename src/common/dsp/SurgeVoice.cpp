@@ -39,7 +39,7 @@ float SurgeVoiceState::getPitch()
    ** For this commented out section, see the comment on MPE global pitch bend in SurgeSynthesizer::pitchBend
    */
    return key + /* mainChannelState->pitchBendInSemitones + */ voiceChannelState->pitchBendInSemitones +
-          detune + MTS_RetuningInSemitones(mtsclient,key);
+          detune + MTS_RetuningInSemitones(mtsclient,key,channel);
 }
 
 SurgeVoice::SurgeVoice()
