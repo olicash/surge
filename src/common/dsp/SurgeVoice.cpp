@@ -89,12 +89,13 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
    state.keyState = keyState;
    state.mainChannelState = mainChannelState;
    state.voiceChannelState = voiceChannelState;
+   state.mtsclient=mtsclient;
    if ((scene->polymode.val.i == pm_mono_st_fp) ||
        (scene->portamento.val.f == scene->portamento.val_min.f))
       state.portasrc_key = state.getPitch();
    else
       state.portasrc_key = storage->last_key[scene_id];
-    state.mtsclient=mtsclient;
+    
 
    storage->last_key[scene_id] = key;
    state.portaphase = 0;
