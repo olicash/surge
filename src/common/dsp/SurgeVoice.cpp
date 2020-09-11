@@ -51,8 +51,7 @@ float SurgeVoiceState::getPitch()
    /*
    ** For this commented out section, see the comment on MPE global pitch bend in SurgeSynthesizer::pitchBend
    */
-   return key + /* mainChannelState->pitchBendInSemitones + */ voiceChannelState->pitchBendInSemitones +
-          detune;
+   return key + /* mainChannelState->pitchBendInSemitones + */ voiceChannelState->pitchBendInSemitones + detune + MTS_RetuningInSemitones(mtsclient,key,channel);
 }
 
 SurgeVoice::SurgeVoice()
@@ -70,7 +69,8 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
                        MidiKeyState* keyState,
                        MidiChannelState* mainChannelState,
                        MidiChannelState* voiceChannelState,
-                       bool mpeEnabled
+                       bool mpeEnabled,
+                       MTSClient* mtsclient
     )
 //: fb(storage,oscene)
 {
@@ -96,11 +96,12 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
    state.freleasevel = 0;
    
    state.scene_id = scene_id;
-   state.detune = detune;
+   state.detune = detune / 100.f;
    state.uberrelease = false;
    state.keyState = keyState;
    state.mainChannelState = mainChannelState;
    state.voiceChannelState = voiceChannelState;
+   state.mtsclient=mtsclient;
    if ((scene->polymode.val.i == pm_mono_st_fp) ||
        (scene->portamento.val.f == scene->portamento.val_min.f))
       state.portasrc_key = state.getPitch();
@@ -221,7 +222,7 @@ SurgeVoice::~SurgeVoice()
 {
 }
 
-void SurgeVoice::legato(int key, int velocity, char detune)
+void SurgeVoice::legato(int key, int velocity, float detune)
 {
    if (state.portaphase > 1)
       state.portasrc_key = state.getPitch();
