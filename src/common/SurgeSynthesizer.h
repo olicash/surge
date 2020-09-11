@@ -1,6 +1,18 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #pragma once
 #include "SurgeStorage.h"
 #include "SurgeVoice.h"
@@ -51,6 +63,8 @@ class alignas(16) SurgeSynthesizer
 {
 public:
    float output alignas(16)[N_OUTPUTS][BLOCK_SIZE];
+   float sceneout alignas(16)[2][N_OUTPUTS][BLOCK_SIZE_OS]; // this is blocksize_os but has been downsampled by the end of process into block_size
+
    float input alignas(16)[N_INPUTS][BLOCK_SIZE];
    timedata time_data;
    bool audio_processing_active;
@@ -137,7 +151,7 @@ public:
    bool setModulation(long ptag, modsources modsource, float value);
    float getModulation(long ptag, modsources modsource);
    float getModDepth(long ptag, modsources modsource);
-   void clearModulation(long ptag, modsources modsource);
+   void clearModulation(long ptag, modsources modsource, bool clearEvenIfInvalid = false);
    void clear_osc_modulation(
        int scene, int entry); // clear the modulation routings on the algorithm-specific sliders
    int remapExternalApiToInternalId(unsigned int x);
@@ -177,70 +191,12 @@ public:
 
    float vu_peak[8];
 
-   void populateDawExtraState() {
-       storage.getPatch().dawExtraState.isPopulated = true;
-       storage.getPatch().dawExtraState.mpeEnabled = mpeEnabled;
-       storage.getPatch().dawExtraState.mpePitchBendRange = mpePitchBendRange;
-       
-       storage.getPatch().dawExtraState.hasTuning = !storage.isStandardTuning;
-       if( ! storage.isStandardTuning )
-           storage.getPatch().dawExtraState.tuningContents = storage.currentScale.rawText;
-       else
-           storage.getPatch().dawExtraState.tuningContents = "";
-
-       storage.getPatch().dawExtraState.hasMapping = !storage.isStandardMapping;
-       if( ! storage.isStandardMapping )
-           storage.getPatch().dawExtraState.mappingContents = storage.currentMapping.rawText;
-       else
-           storage.getPatch().dawExtraState.mappingContents = "";
-   }
+   void populateDawExtraState();
    
-   void loadFromDawExtraState() {
-       if( ! storage.getPatch().dawExtraState.isPopulated )
-           return;
-       mpeEnabled = storage.getPatch().dawExtraState.mpeEnabled;
-       if( storage.getPatch().dawExtraState.mpePitchBendRange > 0 )
-          mpePitchBendRange = storage.getPatch().dawExtraState.mpePitchBendRange;
-
-       if( storage.getPatch().dawExtraState.hasTuning )
-       {
-          try {
-             auto sc = Tunings::parseSCLData(storage.getPatch().dawExtraState.tuningContents );
-             storage.retuneToScale(sc);
-          }
-          catch( Tunings::TuningError &e )
-          {
-             Surge::UserInteractions::promptError( e.what(), "Unable to restore tuning" );
-             storage.retuneToStandardTuning();
-          }
-       }
-       else
-       {
-          storage.retuneToStandardTuning();
-       }
-       
-       if( storage.getPatch().dawExtraState.hasMapping )
-       {
-          try
-          {
-             auto kb = Tunings::parseKBMData(storage.getPatch().dawExtraState.mappingContents );
-             storage.remapToKeyboard(kb);
-          }
-          catch( Tunings::TuningError &e )
-          {
-             Surge::UserInteractions::promptError( e.what(), "Unable to restore mapping" );
-             storage.retuneToStandardTuning();
-          }
-
-       }
-       else
-       {
-          storage.remapToStandardKeyboard();
-       }
-   }
+   void loadFromDawExtraState();
    
 public:
-   int CC0, PCH, patchid;
+   int CC0, CC32, PCH, patchid;
    float masterfade = 0;
    HalfRateFilter halfbandA, halfbandB, halfbandIN;
    std::list<SurgeVoice*> voices[2];

@@ -9,10 +9,10 @@
 #include <memory>
 #include <atomic>
 #include <iostream>
+#include <sstream>
+#include "DebugHelpers.h"
 
 #include "vstgui/lib/ccolor.h"
-
-#define _D(x) " " << (#x) << "=" << x
 
 /*
 ** Support for rudimentary skinning in Surge
@@ -32,7 +32,7 @@ namespace VSTGUI {
    class CFrame;
 }
 
-#define FIXMEERROR std::cout
+#define FIXMEERROR SkinDB::get().errorStream
 
 namespace Surge
 {
@@ -70,6 +70,8 @@ class SkinDB;
 class Skin
 {
 public:
+   static constexpr int current_format_version = 1;
+   
    typedef std::shared_ptr<Skin> ptr_t;
    typedef std::unordered_map<std::string, std::string> props_t;
    
@@ -78,12 +80,12 @@ public:
    Skin(std::string root, std::string name);
    ~Skin();
 
-   void reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore);
+   bool reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore);
 
-   std::string resourceName(std::string relativeName) {
+   std::string resourceName(const std::string &relativeName) {
       return root + name + "/" + relativeName;
    }
-   
+
    std::string root;
    std::string name;
 
@@ -108,11 +110,31 @@ public:
       typedef enum {
          ENUM,
          UIID,
+         LABEL,
       } Type;
       Type type;
       std::string classname;
       std::string ultimateparentclassname;
       props_t allprops;
+
+      std::string toString() {
+         std::ostringstream oss;
+
+         switch( type )
+         {
+         case ENUM:
+            oss << "ENUM:" << enum_name;
+            break;
+         case UIID:
+            oss << "UIID:" << ui_id;
+            break;
+         case LABEL:
+            oss << "LABEL";
+            break;
+         }
+         oss << " (x=" << x << " y=" << y << " w=" << w << " h=" << h << ")";
+         return oss.str();
+      }
    };
 
    struct ControlGroup
@@ -130,6 +152,19 @@ public:
    VSTGUI::CColor getColor( std::string id, const VSTGUI::CColor &def, std::unordered_set<std::string> noLoops = std::unordered_set<std::string>() );
    std::unordered_set<std::string> getQueriedColors() { return queried_colors; }
 
+   Skin::Control::ptr_t controlForEnumID( int enum_id ) {
+      // FIXME don't be stupid like this of course
+      for( auto ic : controls )
+      {
+         if( ic->type == Control::Type::ENUM && ic->enum_id == enum_id  )
+         {
+            return ic;
+         }
+      }
+      
+      return nullptr;
+   }
+   
    Skin::Control::ptr_t controlForUIID( std::string ui_id ) {
       // FIXME don't be stupid like this of course
       for( auto ic : controls )
@@ -150,6 +185,9 @@ public:
       if( c->allprops.find(key) != c->allprops.end() )
          return Maybe<std::string>(c->allprops[key]);
       auto cl = componentClasses[c->classname];
+
+      if( ! cl.get() )
+         return Maybe<std::string>();
 
       do {
          if( cl->allprops.find(key) != cl->allprops.end() )
@@ -184,8 +222,20 @@ public:
 
    CScalableBitmap *hoverBitmapOverlayForBackgroundBitmap( Skin::Control::ptr_t c, CScalableBitmap *b, std::shared_ptr<SurgeBitmaps> bitmapStore, HoverType t );
 
-   static const std::string defaultImageIDPrefix;
+   std::vector<Skin::Control::ptr_t> getLabels() const {
+      std::vector<Skin::Control::ptr_t> labels;
+      for( auto ic : controls )
+      {
+         if( ic->type == Control::LABEL )
+         {
+            labels.push_back(ic);
+         }
+      }
+      return labels;
+   }
    
+   static const std::string defaultImageIDPrefix;
+
 private:
    static std::atomic<int> instances;
    std::vector<std::pair<std::string, props_t>> globals;
@@ -211,18 +261,20 @@ private:
    std::vector<Control::ptr_t> controls;
    std::unordered_map<std::string, ComponentClass::ptr_t> componentClasses;
 
-   void recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *groupList, std::string pfx="" );
+   bool recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *groupList, std::string pfx="" );
 };
    
 class SkinDB
 {
 public:
-   static SkinDB& get(SurgeStorage *);
+   static SkinDB& get();
 
    struct Entry {
       std::string root;
       std::string name;
-
+      std::string displayName;
+      bool parseable;
+      
       // Since we want to use this as a map
       bool operator==(const Entry &o) const {
          return root == o.root && name == o.name;
@@ -234,19 +286,40 @@ public:
             return h(e.root) ^ h(e.name);
          }
       };
+
+      bool matchesSkin( const Skin::ptr_t s ) {
+         return s.get() && s->root == root && s->name == name;
+      }
    };
    
    void rescanForSkins(SurgeStorage *);
    std::vector<Entry> getAvailableSkins() { return availableSkins; }
+   Maybe<Entry> getEntryByRootAndName( const std::string &r, const std::string &n ) {
+      for( auto &a : availableSkins )
+         if( a.root == r && a.name == n )
+            return Maybe<Entry>(a);
+      return Maybe<Entry>();
+   }
+   const Entry &getDefaultSkinEntry() const {
+      return defaultSkinEntry;
+   }
+   
    Skin::ptr_t getSkin( const Entry &skinEntry );
-   Skin::ptr_t defaultSkin();
+   Skin::ptr_t defaultSkin(SurgeStorage *);
+
+   std::string getErrorString() { return errorStream.str(); };
+   std::string getAndResetErrorString() {
+      auto s = errorStream.str();
+      errorStream = std::ostringstream();
+      return s;
+   }
+
 
 private:
-   SkinDB(SurgeStorage *);
+   SkinDB();
    ~SkinDB();
    SkinDB(const SkinDB&) = delete; 
    SkinDB& operator=(const SkinDB&) = delete; 
-   SurgeStorage *storage;
    
    std::vector<Entry> availableSkins;
    std::unordered_map<Entry,std::shared_ptr<Skin>, Entry::hash> skins;
@@ -254,6 +327,9 @@ private:
    bool foundDefaultSkinEntry = false;
    
    static std::shared_ptr<SkinDB> instance;
+   static std::ostringstream errorStream;
+
+   friend class Skin;
 };
 
 
@@ -261,13 +337,21 @@ class SkinConsumingComponnt {
 public:
    virtual ~SkinConsumingComponnt() {
    }
-   virtual void setSkin( Skin::ptr_t s ) { skin = s; }
+   virtual void setSkin( Skin::ptr_t s ) {
+      setSkin( s, nullptr, nullptr );
+   }
    virtual void setSkin( Skin::ptr_t s, std::shared_ptr<SurgeBitmaps> b ) {
+      setSkin( s, b, nullptr );
+   }
+   virtual void setSkin( Skin::ptr_t s, std::shared_ptr<SurgeBitmaps> b, Skin::Control::ptr_t c ) {
       skin = s;
       associatedBitmapStore = b;
+      skinControl = c;
+      onSkinChanged();
    }
-   virtual void setAssociatedSkinControl( Skin::Control::ptr_t c ) { skinControl = c; };
-   virtual void setAssociatedBitmapStore( std::shared_ptr<SurgeBitmaps> b ) { associatedBitmapStore = b; }
+
+   virtual void onSkinChanged() { }
+   
 protected:
    Skin::ptr_t skin = nullptr;
    Skin::Control::ptr_t skinControl = nullptr;

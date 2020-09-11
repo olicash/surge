@@ -102,7 +102,7 @@ void showHTML( const std::string &html )
 {
     // Why does mktemp crash on macos I wonder?
     std::ostringstream fns;
-    fns << "/var/tmp/surge-tuning." << rand() << ".html";
+    fns << "/var/tmp/surge-data." << rand() << ".html";
 
     FILE *f = fopen(fns.str().c_str(), "w" );
     if( f )
@@ -122,6 +122,7 @@ void openFolderInFileBrowser(const std::string& folder)
 
 void promptFileOpenDialog(const std::string& initialDirectory,
                           const std::string& filterSuffix,
+                          const std::string& filterDescription,
                           std::function<void(std::string)> callbackOnOpen,
                           bool canSelectDirectories,
                           bool canCreateDirectories,

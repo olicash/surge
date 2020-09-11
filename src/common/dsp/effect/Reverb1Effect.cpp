@@ -229,7 +229,9 @@ void Reverb1Effect::process(float* dataL, float* dataR)
                 (fxdata->p[rp_predelay].temposync ? storage->temposyncratio_inv : 1.f);
 
    const __m128 one4 = _mm_set1_ps(1.f);
-   __m128 damp4 = _mm_load1_ps(f[rp_damping]);
+   float dv = *(f[rp_damping]);
+   dv = limit_range( dv, 0.01f, 0.99f ); // this is a simple onepole damper, w * y[n] + ( 1-w ) y[n-1] so to be stable has to stay in range
+   __m128 damp4 = _mm_load1_ps(&dv);
    __m128 damp4m1 = _mm_sub_ps(one4, damp4);
 
    for (int k = 0; k < BLOCK_SIZE; k++)
@@ -355,7 +357,7 @@ void Reverb1Effect::init_ctrltypes()
    fxdata->p[rp_roomsize].modulateable = false;
    fxdata->p[rp_decaytime].set_name("Decay Time");
    fxdata->p[rp_decaytime].set_type(ct_reverbtime);
-   fxdata->p[rp_damping].set_name("HF Damp");
+   fxdata->p[rp_damping].set_name("HF Damping");
    fxdata->p[rp_damping].set_type(ct_percent);
 
    fxdata->p[rp_locut].set_name("Low Cut");
@@ -389,8 +391,8 @@ void Reverb1Effect::init_ctrltypes()
    fxdata->p[rp_gain1].posy_offset = 5;
    fxdata->p[rp_hicut].posy_offset = 5;
 
-   fxdata->p[rp_mix].posy_offset = 7;
-   fxdata->p[rp_width].posy_offset = 7;
+   fxdata->p[rp_mix].posy_offset = 9;
+   fxdata->p[rp_width].posy_offset = 5;
 
    // sections
    // pre-delay

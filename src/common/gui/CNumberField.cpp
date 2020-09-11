@@ -1,13 +1,22 @@
-//-------------------------------------------------------------------------------------------------------
-//
-//	Shortcircuit
-//
-//	Copyright 2004 Claes Johanson
-//
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
 
 #include "CNumberField.h"
 #include "Colors.h"
+#include "SurgeStorage.h"
+#include "UserDefaults.h"
 #include <string>
 #include <math.h>
 #include "unitconversion.h"
@@ -65,7 +74,8 @@ void unit_prefix(float value, char* text, bool allow_milli = true, bool allow_ki
 CNumberField::CNumberField(const CRect& size,
                            IControlListener* listener,
                            long tag,
-                           CBitmap* pBackground)
+                           CBitmap* pBackground,
+                           SurgeStorage* storage)
     : CControl(size, listener, tag, pBackground)
 {
    i_value = 60;
@@ -83,6 +93,7 @@ CNumberField::CNumberField(const CRect& size,
    setLabelPlacement(lp_left);
    i_poly = 0;
    altlook = false;
+   this->storage = storage;
 }
 
 CNumberField::~CNumberField()
@@ -321,15 +332,16 @@ void CNumberField::draw(CDrawContext* pContext)
    case cm_midichannel_from_127:
    {
       int mc = i_value / 8 + 1;
-      sprintf(the_text, "Ch. %i", mc );
+      sprintf(the_text, "Ch %i", mc );
    }
    break;
    case cm_notename:
    {
-      int octave = (i_value / 12) - 2;
-      char notenames[12][3] = {"C ", "C#", "D ", "D#", "E ", "F ",
-                               "F#", "G ", "G#", "A ", "A#", "B "};
-      sprintf(the_text, "%s%i", notenames[i_value % 12], octave);
+      int oct_offset = 1;
+      if (storage)
+         oct_offset = Surge::Storage::getUserDefaultValue(storage, "middleC", 1);
+      char notename[16];
+      sprintf(the_text, "%s", get_notename(notename, i_value, oct_offset));
    }
    break;
    case cm_envshape:
@@ -425,8 +437,9 @@ void CNumberField::draw(CDrawContext* pContext)
       else
       {
          float t = powf(2, value);
-         unit_prefix(t, the_text, true, false);
-         sprintf(the_text, "%ss", the_text);
+         char tmp_text[28];
+         unit_prefix(t, tmp_text, true, false);
+         sprintf(the_text, "%ss", tmp_text);
       }
       break;
    }
@@ -467,15 +480,17 @@ void CNumberField::draw(CDrawContext* pContext)
    case cm_frequency1hz:
    {
       float freq = powf(2, value);
-      unit_prefix(freq, the_text, false, false);
-      sprintf(the_text, "%sHz", the_text);
+      char tmp_text[28];
+      unit_prefix(freq, tmp_text, false, false);
+      sprintf(the_text, "%sHz", tmp_text);
       break;
    }
    case cm_time1s:
    {
       float t = powf(2, value);
-      unit_prefix(t, the_text, true, false);
-      sprintf(the_text, "%ss", the_text);
+      char tmp_text[28];
+      unit_prefix(t, tmp_text, true, false);
+      sprintf(the_text, "%ss", tmp_text);
       break;
    }
    case cm_noyes:
@@ -679,13 +694,17 @@ CMouseEventResult CNumberField::onMouseMoved(CPoint& where, const CButtonState& 
 bool CNumberField::onWheel(const CPoint& where, const float& distance, const CButtonState& buttons)
 {
    beginEdit();
-   double mouseFactor = 0.01;
-   if( controlmode == cm_midichannel )
-   {
-      mouseFactor = 0.6; // these are all just empirical from trying them on my mbp
-   }
+   double mouseFactor = 1;
 
-   value += distance * mouseFactor;
+   if (controlmode == cm_midichannel_from_127)
+      mouseFactor = 7.5;
+  
+   if (buttons & kControl)
+      value += distance * 0.01;  
+   else
+      value += distance / (i_max - i_min) * mouseFactor;
+   
+
    i_value = (int)((1.f / 0.99f) * (value - 0.005f) * (float)(i_max - i_min) + 0.5) + i_min;
    bounceValue();
    invalid();
@@ -886,4 +905,3 @@ void CNumberField::setLabel(char* newlabel)
    strcpy(label, newlabel);
    setLabelPlacement(labelplacement); // update rect
 }
-//------------------------------------------------------------------------

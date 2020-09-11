@@ -1,9 +1,22 @@
-//-------------------------------------------------------------------------------------------------------
-//		Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #include "SurgeVoice.h"
 #include "DspUtilities.h"
 #include "QuadFilterChain.h"
+#include <math.h>
 
 using namespace std;
 
@@ -39,7 +52,7 @@ float SurgeVoiceState::getPitch()
    ** For this commented out section, see the comment on MPE global pitch bend in SurgeSynthesizer::pitchBend
    */
    return key + /* mainChannelState->pitchBendInSemitones + */ voiceChannelState->pitchBendInSemitones +
-          detune + MTS_RetuningInSemitones(mtsclient,key,channel);
+          detune;
 }
 
 SurgeVoice::SurgeVoice()
@@ -57,8 +70,7 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
                        MidiKeyState* keyState,
                        MidiChannelState* mainChannelState,
                        MidiChannelState* voiceChannelState,
-                       bool mpeEnabled,
-                       MTSClient* mtsclient
+                       bool mpeEnabled
     )
 //: fb(storage,oscene)
 {
@@ -84,19 +96,18 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
    state.freleasevel = 0;
    
    state.scene_id = scene_id;
-   state.detune = detune / 100.f;
+   state.detune = detune;
    state.uberrelease = false;
    state.keyState = keyState;
    state.mainChannelState = mainChannelState;
    state.voiceChannelState = voiceChannelState;
-   state.mtsclient=mtsclient;
    if ((scene->polymode.val.i == pm_mono_st_fp) ||
        (scene->portamento.val.f == scene->portamento.val_min.f))
       state.portasrc_key = state.getPitch();
    else
       state.portasrc_key = storage->last_key[scene_id];
-    
-
+   state.priorpkey = state.portasrc_key;
+   
    storage->last_key[scene_id] = key;
    state.portaphase = 0;
    noisegenL[0] = 0.f;
@@ -191,20 +202,58 @@ SurgeVoice::SurgeVoice(SurgeStorage* storage,
    // oscillators which need the modulation state set in calc_ctrldata to get sample 0
    // right.
    switch_toggled();
+
+   //for (int i = 0; i < 128; i++)
+   //{
+   //   printf("%.7f %.7f %.7f %.7f\n", table_envrate_exp[(i * 4) + 0], table_envrate_exp[(i * 4) + 1],
+   //          table_envrate_exp[(i * 4) + 2], table_envrate_exp[(i * 4) + 3]);
+   //}
+   //printf("\n");
+   //for (int i = 0; i < 128; i++)
+   //{
+   //   printf("%.7f %.7f %.7f %.7f\n", table_envrate_linear[(i * 4) + 0],
+   //          table_envrate_linear[(i * 4) + 1], table_envrate_linear[(i * 4) + 2],
+   //          table_envrate_linear[(i * 4) + 3]);
+   //}
 }
 
 SurgeVoice::~SurgeVoice()
 {
 }
 
-void SurgeVoice::legato(int key, int velocity, float detune)
+void SurgeVoice::legato(int key, int velocity, char detune)
 {
    if (state.portaphase > 1)
       state.portasrc_key = state.getPitch();
    else
    {
-      state.portasrc_key =
-          ((1 - state.portaphase) * state.portasrc_key + state.portaphase * state.getPitch());
+      // exponential or linear key traversal for the portamento
+      float phase;
+      switch (scene->portamento.porta_curve)
+      {
+      case porta_log:
+         phase = glide_log(state.portaphase);
+         break;
+      case porta_lin:
+         phase = state.portaphase;
+         break;
+      case porta_exp:
+         phase = glide_exp(state.portaphase);
+         break;
+      }
+
+      state.portasrc_key = ((1 - phase) * state.portasrc_key + phase * state.getPitch());
+      
+      if (scene->portamento.porta_gliss) // quantize portamento to keys
+         state.pkey = floor(state.pkey + 0.5);
+
+      state.porta_doretrigger = false;
+      if (scene->portamento.porta_retrigger)
+         if( floor( state.pkey + 0.5 ) != state.priorpkey )
+         {
+            state.priorpkey = floor( state.pkey + 0.5 );
+            state.porta_doretrigger = true;
+         }
    }
 
    state.key = key;
@@ -333,15 +382,48 @@ void SurgeVoice::uber_release()
 
 void SurgeVoice::update_portamento()
 {
-   // float ratemult=1;
-   // if(zone->portamento_mode) ratemult = 12/(0.00001+fabs(key-portasrc_key));
+   float const_rate_factor = 1.0;
+   int quantStep = 12;
+   
+   if (!storage->isStandardTuning && storage->currentScale.count > 1)
+      quantStep = storage->currentScale.count;
+
+   // portamento constant rate mode (multiply portamento time with every octave traversed (or scale length in case of microtuning)
+   if (scene->portamento.porta_constrate)
+      const_rate_factor = (1.f / ((1.f / quantStep) * fabs(state.getPitch() - state.portasrc_key) + 0.00001));
+
    state.portaphase += envelope_rate_linear(localcopy[scene->portamento.param_id_in_scene].f) *
-                       (scene->portamento.temposync ? storage->temposyncratio : 1.f);
-   // powf(2,-zone->portamento)
+                           (scene->portamento.temposync ? storage->temposyncratio : 1.f) * const_rate_factor;
+
    if (state.portaphase < 1)
    {
-      state.pkey = (1.f - state.portaphase) * state.portasrc_key +
-                   (float)state.portaphase * state.getPitch();
+      // exponential or linear key traversal for the portamento
+      float phase;
+      switch (scene->portamento.porta_curve)
+      {
+      case porta_log:
+         phase = glide_log(state.portaphase);
+         break;
+      case porta_lin:
+         phase = state.portaphase;
+         break;
+      case porta_exp:
+         phase = glide_exp(state.portaphase);
+         break;
+      }
+
+      state.pkey = (1.f - phase) * state.portasrc_key + (float)phase * state.getPitch();
+
+      if (scene->portamento.porta_gliss)    // quantize portamento to keys
+         state.pkey = floor(state.pkey + 0.5);
+
+      state.porta_doretrigger = false;
+      if (scene->portamento.porta_retrigger)
+         if( floor( state.pkey + 0.5 ) != state.priorpkey )
+         {
+            state.priorpkey = floor( state.pkey + 0.5 );
+            state.porta_doretrigger = true;
+         }
    }
    else
       state.pkey = state.getPitch();
@@ -372,13 +454,16 @@ template <bool first> void SurgeVoice::calc_ctrldata(QuadFilterChainState* Q, in
          lfo[i].process_block();
    }
 
-   if (lfo[0].retrigger_AEG)
+   for( int i=0; i<6; ++i )
    {
-      ((AdsrEnvelope*)modsources[ms_ampeg])->retrigger();
-   }
-   if (lfo[0].retrigger_FEG)
-   {
-      ((AdsrEnvelope*)modsources[ms_filtereg])->retrigger();
+      if (lfo[i].retrigger_AEG)
+      {
+         ((AdsrEnvelope*)modsources[ms_ampeg])->retrigger();
+      }
+      if (lfo[i].retrigger_FEG)
+      {
+         ((AdsrEnvelope*)modsources[ms_filtereg])->retrigger();
+      }
    }
 
    modsources[ms_aftertouch]->output = state.voiceChannelState->pressure;
@@ -435,6 +520,13 @@ template <bool first> void SurgeVoice::calc_ctrldata(QuadFilterChainState* Q, in
    }
 
    update_portamento();
+   if( state.porta_doretrigger )
+   {
+      state.porta_doretrigger = false;
+      ((AdsrEnvelope*)modsources[ms_ampeg])->retrigger();
+      ((AdsrEnvelope*)modsources[ms_filtereg])->retrigger();
+   }
+
    float pb = modsources[ms_pitchbend]->output;
    if (pb > 0)
       pb *= (float)scene->pbrange_up.val.i;

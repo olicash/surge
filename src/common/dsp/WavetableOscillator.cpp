@@ -1,6 +1,18 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #include "Oscillator.h"
 #include "DspUtilities.h"
 
@@ -84,7 +96,7 @@ void WavetableOscillator::init(float pitch, bool is_display)
             s = 0.f; //(oscdata->startphase.val.f) * (float)oscdata->wt.size;
          else if (!is_display)
          {
-            float drand = (float)rand() / RAND_MAX;
+            float drand = (float)rand() / (float)RAND_MAX;
             oscstate[i] = drand; // * (float)oscdata->wt.size;
          }
 
@@ -103,7 +115,6 @@ void WavetableOscillator::init_ctrltypes()
    oscdata->p[0].set_name("Morph");
    oscdata->p[0].set_type(ct_countedset_percent);
    oscdata->p[0].set_user_data(oscdata);
-   oscdata->p[0].snap = false;
 
    oscdata->p[1].set_name("Skew Vertical");
    oscdata->p[1].set_type(ct_percent_bidirectional);

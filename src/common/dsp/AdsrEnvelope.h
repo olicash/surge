@@ -1,12 +1,25 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #pragma once
 
 #include "DspUtilities.h"
 #include "SurgeStorage.h"
 #include "SurgeVoiceState.h"
 #include "ModulationSource.h"
+#include "DebugHelpers.h"
 
 enum AdsrState
 {
@@ -172,7 +185,8 @@ public:
                                  
          v_c1_delayed = v_c1;
 
-         __m128 S = _mm_load_ss(&lc[s].f);
+         float sparm = limit_range( lc[s].f, 0.f, 1.f );
+         __m128 S = _mm_load_ss(&sparm);
          S = _mm_mul_ss(S, S);
          __m128 v_attack = _mm_andnot_ps(discharge, v_gate);
          __m128 v_decay = _mm_or_ps(_mm_andnot_ps(discharge, v_cc_vec), _mm_and_ps(discharge, S));
@@ -233,7 +247,7 @@ public:
          case (s_attack):
          {
             phase +=
-                envelope_rate_linear(lc[a].f) * (adsr->a.temposync ? storage->temposyncratio : 1.f);
+                envelope_rate_linear_nowrap(lc[a].f) * (adsr->a.temposync ? storage->temposyncratio : 1.f);
             if (phase >= 1)
             {
                phase = 1;
@@ -264,7 +278,7 @@ public:
             phase = sustain;
             }*/
             float rate =
-                envelope_rate_linear(lc[d].f) * (adsr->d.temposync ? storage->temposyncratio : 1.f);
+               envelope_rate_linear_nowrap(lc[d].f) * (adsr->d.temposync ? storage->temposyncratio : 1.f);
 
             float l_lo, l_hi;
 
@@ -275,11 +289,22 @@ public:
                float sx = sqrt(phase);
                l_lo = phase - 2 * sx * rate + rate * rate;
                l_hi = phase + 2 * sx * rate + rate * rate;
-               // That + rate * rate in both means at low sustain ( < 1e-3 or so) you end up with
-               // lo and hi both pushing us up off sustain. Unfortunatley we ned to handle that case
-               // specially by pushing lo down
-               if( lc[s].f < 1e-3 && phase < 1e-4 )
+
+               /*
+               ** That + rate * rate in both means at low sustain ( < 1e-3 or so) you end up with
+               ** lo and hi both pushing us up off sustain. Unfortunatley we ned to handle that case
+               ** specially by pushing lo down. These limits are pretty empirical. Git blame to see
+               ** the various issues around here which show the test cases.
+               */
+               if( ( lc[s].f < 1e-3 && phase < 1e-4 ) || ( lc[s].f == 0 && lc[d].f < -7 ) )
                   l_lo = 0;
+               /*
+               ** Similarly if the rate is very high - larger than one - we can push l_lo well above the
+               ** sustain, which can set back a feedback cycle where we bounce onto sustain and off again.
+               ** To understand this, remove this bound and play with test-data/patches/ADSR-Self-Oscillate.fxp
+               */
+               if( rate > 1.0 && l_lo > lc[s].f )
+                  l_lo = lc[s].f;
             }
             break;
             case 2:
@@ -297,12 +322,14 @@ public:
 
             phase = limit_range(lc[s].f, l_lo, l_hi);
             output = phase;
+
+
          }
          break;
          case (s_release):
          {
             phase -=
-                envelope_rate_linear(lc[r].f) * (adsr->r.temposync ? storage->temposyncratio : 1.f);
+                envelope_rate_linear_nowrap(lc[r].f) * (adsr->r.temposync ? storage->temposyncratio : 1.f);
             output = phase;
             for (int i = 0; i < lc[r_s].i; i++)
                output *= phase;
@@ -317,7 +344,7 @@ public:
          break;
          case (s_uberrelease):
          {
-            phase -= envelope_rate_linear(-6.5);
+            phase -= envelope_rate_linear_nowrap(-6.5);
             output = phase;
             for (int i = 0; i < lc[r_s].i; i++)
                output *= phase;

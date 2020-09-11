@@ -61,7 +61,7 @@ void showHTML( const std::string &html )
 
     auto dwRetVal = GetTempPath(MAX_PATH, lpTempPathBuffer);
     std::ostringstream fns;
-    fns << lpTempPathBuffer << "surge-tuning." << rand() << ".html";
+    fns << lpTempPathBuffer << "surge-data." << rand() << ".html";
 
     FILE *f = fopen(fns.str().c_str(), "w" );
     if( f )
@@ -128,6 +128,7 @@ void BrowseFolder(std::string saved_path, std::function<void(std::string)> cb)
   
 void promptFileOpenDialog(const std::string& initialDirectory,
                           const std::string& filterSuffix,
+                          const std::string& filterDescription,
                           std::function<void(std::string)> callbackOnOpen,
                           bool canSelectDirectories,
                           bool canCreateDirectories,
@@ -140,6 +141,16 @@ void promptFileOpenDialog(const std::string& initialDirectory,
     }
    // With many thanks to
    // https://www.daniweb.com/programming/software-development/code/217307/a-simple-getopenfilename-example
+
+   // this also helped!
+   // https://stackoverflow.com/questions/34201213/c-lpstr-and-string-trouble-with-zero-terminated-strings
+
+   std::string fullFilter;
+   fullFilter.append(filterDescription);
+   fullFilter.push_back('\0');
+   fullFilter.append("*" + filterSuffix);
+   fullFilter.push_back('\0');
+
    char szFile[1024];
    OPENFILENAME ofn;
    ZeroMemory(&ofn, sizeof(ofn));
@@ -148,11 +159,11 @@ void promptFileOpenDialog(const std::string& initialDirectory,
    ofn.lpstrFile = szFile;
    ofn.lpstrFile[0] = '\0';
    ofn.nMaxFile = sizeof(szFile);
-   ofn.lpstrFilter = "All\0*.*\0";
+   ofn.lpstrFilter = fullFilter.c_str();
    ofn.nFilterIndex = 0;
    ofn.lpstrFileTitle = NULL;
    ofn.nMaxFileTitle = 0;
-   ofn.lpstrInitialDir = NULL;
+   ofn.lpstrInitialDir = initialDirectory.c_str();
    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
    if (GetOpenFileName(&ofn))

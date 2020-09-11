@@ -487,7 +487,8 @@ void CScalableBitmap::drawSVG(CDrawContext* dc,
             NSVGgradient* ngrad = shape->fill.gradient;
 
             float* x = ngrad->xform;
-            VSTGUI::CGraphicsTransform gradXform(x[0], x[1], x[2], x[3], x[4], x[5]);
+            // This re-order is on purpose; vstgui and nanosvg use different order for diagonals
+            VSTGUI::CGraphicsTransform gradXform(x[0], x[2], x[1], x[3], x[4], x[5]);
             VSTGUI::CGradient::ColorStopMap csm;
             VSTGUI::CGradient* cg = VSTGUI::CGradient::create(csm);
 
@@ -499,13 +500,37 @@ void CScalableBitmap::drawSVG(CDrawContext* dc,
             VSTGUI::CPoint s0(0, 0), s1(0, 1);
             VSTGUI::CPoint p0 = gradXform.inverse().transform(s0);
             VSTGUI::CPoint p1 = gradXform.inverse().transform(s1);
-
+            
             dc->fillLinearGradient(gp, *cg, p0, p1, evenOdd);
             cg->forget();
          }
+         else if( shape->fill.type == NSVG_PAINT_RADIAL_GRADIENT)
+         {
+            bool evenOdd = (shape->fillRule == NSVGfillRule::NSVG_FILLRULE_EVENODD);
+            NSVGgradient* ngrad = shape->fill.gradient;
+
+            float* x = ngrad->xform;
+            // This re-order is on purpose; vstgui and nanosvg use different order for diagonals
+            VSTGUI::CGraphicsTransform gradXform(x[0], x[2], x[1], x[3], x[4], x[5]);
+            VSTGUI::CGradient::ColorStopMap csm;
+            VSTGUI::CGradient* cg = VSTGUI::CGradient::create(csm);
+
+            for( int i=0; i<ngrad->nstops; ++i )
+            {
+               auto stop = ngrad->stops[i];
+               cg->addColorStop(stop.offset, svgColorToCColor(stop.color));
+            }
+
+            VSTGUI::CPoint s0(0, 0), s1(0.5,0); // the box has size -0.5, 0.5 so the radius is 0.5
+            VSTGUI::CPoint p0 = gradXform.inverse().transform(s0);
+            VSTGUI::CPoint p1 = gradXform.inverse().transform(s1);
+            dc->fillRadialGradient(gp, *cg, p0, p1.x, CPoint(0,0), evenOdd);
+            cg->forget();
+
+         }
          else
          {
-            std::cerr << "No radial gradient support yet" << std::endl;
+            std::cerr << "Unknown Shape Fill Type" << std::endl;
             dc->setFillColor(VSTGUI::kRedCColor);
             dc->drawGraphicsPath(gp, VSTGUI::CDrawContext::kPathFilled);
          }

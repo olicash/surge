@@ -30,6 +30,7 @@ int get_fxtype(int id)
    case fxt_conditioner:
       return 6;
    case fxt_freqshift:
+   case fxt_ringmod:
       return 8;
    case fxt_off:
       return 0;
@@ -142,11 +143,12 @@ CMouseEventResult CEffectSettings::onMouseMoved(CPoint& where, const CButtonStat
          isInside = true;
       }
    }
+   /*
    if( isInside )
       getFrame()->setCursor( VSTGUI::kCursorHand );
    else
       getFrame()->setCursor( VSTGUI::kCursorDefault );
-
+   */
    
    return kMouseEventHandled;
 }

@@ -1,9 +1,22 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #pragma once
 #include "vstcontrols.h"
 #include "SkinSupport.h"
+#include "DebugHelpers.h"
 
 class CHSwitch2 : public VSTGUI::CHorizontalSwitch, public Surge::UI::SkinConsumingComponnt
 {
@@ -24,6 +37,8 @@ public:
       this->rows = rows;
       this->columns = columns;
       this->dragable = dragable;
+
+      mouseDowns = 0;
       imgoffset = 0;
       usesMouseWheel = true; // use mousewheel by default
    }
@@ -32,6 +47,7 @@ public:
    // This matches the paint offset
    virtual int getIValue() { return (int)(value * (float)(rows * columns - 1) + 0.5f); }
    
+   int mouseDowns;
    int imgoffset;
    bool dragable;
    bool usesMouseWheel;
@@ -58,8 +74,11 @@ public:
       // getFrame()->setCursor( VSTGUI::kCursorHand );
       doingHover = true;
       hoverValue = -1;
+      calculateHoverValue(where);
+      invalid();
       return VSTGUI::kMouseEventHandled;
    }
+   void calculateHoverValue( const VSTGUI::CPoint &where );
    virtual VSTGUI::CMouseEventResult onMouseExited (VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override {
       // getFrame()->setCursor( VSTGUI::kCursorDefault );
       doingHover = false;

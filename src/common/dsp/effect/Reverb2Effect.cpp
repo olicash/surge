@@ -16,8 +16,8 @@ enum revparam
    r2p_lf_damping,
    r2p_hf_damping,
 
-   r2p_mix,
    r2p_width,
+   r2p_mix,
    r2p_num_params,
 };
 
@@ -175,7 +175,7 @@ void Reverb2Effect::update_rtime()
 {
    float t = BLOCK_SIZE_INV * ( samplerate *
                                 ( std::max( 1.0f, powf(2.f, *f[r2p_decay_time]) ) * 2.f +
-                                  std::max( 0.1f, powf(2.f, *f[r2p_predelay]) ) * 2.f
+                                  std::max( 0.1f, powf(2.f, *f[r2p_predelay]) * ( fxdata->p[r2p_predelay].temposync ? storage->temposyncratio_inv : 1.f ) ) * 2.f
                                    ) ); // *2 is to get the db120 time
    ringout_time = (int)t;
 }
@@ -203,12 +203,15 @@ void Reverb2Effect::process(float* dataL, float* dataR)
    _lf_damp_coefficent.newValue(0.2 * *f[r2p_lf_damping]);
    _modulation.newValue(*f[r2p_modulation] * samplerate * 0.001f * 5.f);
 
+   width.set_target_smoothed(db_to_linear(*f[r2p_width]));
    mix.set_target_smoothed(*f[r2p_mix]);
-   width.set_target_smoothed(*f[r2p_width]);
 
    _lfo.set_rate(2.0 * M_PI * powf(2, -2.f) * dsamplerate_inv);
 
-   int pdt = (int)( samplerate * pow( 2.0, *f[r2p_predelay] ) );
+   int pdt = limit_range( (int)( samplerate * pow( 2.0, *f[r2p_predelay] ) *
+                                 ( fxdata->p[r2p_predelay].temposync ? storage->temposyncratio_inv : 1.f ) ),
+                          1, PREDELAY_BUFFER_SIZE_LIMIT - 1 );
+
 
    for (int k = 0; k < BLOCK_SIZE; k++)
    {
@@ -231,6 +234,8 @@ void Reverb2Effect::process(float* dataL, float* dataR)
       lfos[2] = -_lfo.r;
       lfos[3] = -_lfo.i;
 
+      auto hdc = limit_range( _hf_damp_coefficent.v, 0.01f, 0.99f );
+      auto ldc = limit_range( _lf_damp_coefficent.v, 0.01f, 0.99f );
       for (int b = 0; b < NUM_BLOCKS; b++)
       {
          x = x + in;
@@ -239,8 +244,8 @@ void Reverb2Effect::process(float* dataL, float* dataR)
             x = _allpass[b][c].process(x, _buildup.v);
          }
 
-         x = _hf_damper[b].process_lowpass(x, _hf_damp_coefficent.v);
-         x = _lf_damper[b].process_highpass(x, _lf_damp_coefficent.v);
+         x = _hf_damper[b].process_lowpass(x, hdc );
+         x = _lf_damper[b].process_highpass(x, ldc );
 
          int modulation = (int)(_modulation.v * lfos[b] * (float)DELAY_SUBSAMPLE_RANGE);
          float tap_outL = 0.f;
@@ -315,6 +320,9 @@ void Reverb2Effect::init_ctrltypes()
 
    fxdata->p[r2p_predelay].set_name("Pre-Delay");
    fxdata->p[r2p_predelay].set_type(ct_reverbpredelaytime);
+
+   fxdata->p[r2p_room_size].set_name("Room Size");
+   fxdata->p[r2p_room_size].set_type(ct_percent_bidirectional);
    fxdata->p[r2p_decay_time].set_name("Decay Time");
    fxdata->p[r2p_decay_time].set_type(ct_reverbtime);
    fxdata->p[r2p_diffusion].set_name("Diffusion");
@@ -323,23 +331,23 @@ void Reverb2Effect::init_ctrltypes()
    fxdata->p[r2p_buildup].set_type(ct_percent);
    fxdata->p[r2p_modulation].set_name("Modulation");
    fxdata->p[r2p_modulation].set_type(ct_percent);
-   fxdata->p[r2p_hf_damping].set_name("HF Damp");
+
+   fxdata->p[r2p_hf_damping].set_name("HF Damping");
    fxdata->p[r2p_hf_damping].set_type(ct_percent);
-   fxdata->p[r2p_lf_damping].set_name("LF Damp");
+   fxdata->p[r2p_lf_damping].set_name("LF Damping");
    fxdata->p[r2p_lf_damping].set_type(ct_percent);
+
+   fxdata->p[r2p_width].set_name("Width");
+   fxdata->p[r2p_width].set_type(ct_decibel_narrow);
    fxdata->p[r2p_mix].set_name("Mix");
    fxdata->p[r2p_mix].set_type(ct_percent);
-   fxdata->p[r2p_width].set_name("Width");
-   fxdata->p[r2p_width].set_type(ct_percent);
-   fxdata->p[r2p_room_size].set_name("Room Size");
-   fxdata->p[r2p_room_size].set_type(ct_percent_bidirectional);
 
    for( int i=r2p_predelay; i<r2p_num_params; ++i )
    {
       auto a = 1;
       if( i >= r2p_room_size ) a += 2;
       if( i >= r2p_lf_damping ) a += 2;
-      if( i >= r2p_mix ) a += 2;
+      if( i >= r2p_width ) a += 2;
       fxdata->p[i].posy_offset = a;
    }
 }
@@ -349,7 +357,7 @@ void Reverb2Effect::init_default_values()
    fxdata->p[r2p_predelay].val.f = -4.f;
    fxdata->p[r2p_decay_time].val.f = 0.75f;
    fxdata->p[r2p_mix].val.f = 0.33f;
-   fxdata->p[r2p_width].val.f = 0.75f;
+   fxdata->p[r2p_width].val.f = 0.0f;
    fxdata->p[r2p_diffusion].val.f = 1.0f;
    fxdata->p[r2p_buildup].val.f = 1.0f;
    fxdata->p[r2p_modulation].val.f = 0.5f;

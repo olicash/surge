@@ -213,10 +213,10 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
                
                for( int rc=0;rc<10; ++rc )
                {
-                  auto a = rand() * 1.0 / RAND_MAX;
-                  auto d = rand() * 1.0 / RAND_MAX;
-                  auto s = 0.8 * rand() * 1.0 / RAND_MAX + 0.1; // we have tested the s=0 case above
-                  auto r = rand() * 1.0 / RAND_MAX;
+                  auto a = rand() * 1.0 / (float)RAND_MAX;
+                  auto d = rand() * 1.0 / (float)RAND_MAX;
+                  auto s = 0.8 * rand() * 1.0 / (float)RAND_MAX + 0.1; // we have tested the s=0 case above
+                  auto r = rand() * 1.0 / (float)RAND_MAX;
                   runCompare( a, d, s, r, as, ds, rs, false );
                }
             }
@@ -301,10 +301,10 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
       testAnalog( 0.1, 0.2, 0.0, 0.1 );
       for( int rc=0;rc<50; ++rc )
       {
-         auto a = rand() * 1.0 / RAND_MAX + 0.03;
-         auto d = rand() * 1.0 / RAND_MAX + 0.03;
-         auto s = 0.7 * rand() * 1.0 / RAND_MAX + 0.2; // we have tested the s=0 case above
-         auto r = rand() * 1.0 / RAND_MAX + 0.03;
+         auto a = rand() * 1.0 / (float)RAND_MAX + 0.03;
+         auto d = rand() * 1.0 / (float)RAND_MAX + 0.03;
+         auto s = 0.7 * rand() * 1.0 / (float)RAND_MAX + 0.2; // we have tested the s=0 case above
+         auto r = rand() * 1.0 / (float)RAND_MAX + 0.03;
          testAnalog( a, d, s, r);
       }
       
@@ -334,8 +334,8 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
 
       for( auto i=0; i<10; ++i )
       {
-         auto s1 = 0.95f * rand() / RAND_MAX + 0.02;
-         auto s2 = 0.95f * rand() / RAND_MAX + 0.02;
+         auto s1 = 0.95f * rand() / (float)RAND_MAX + 0.02;
+         auto s2 = 0.95f * rand() / (float)RAND_MAX + 0.02;
          testSusPush( s1, s2 );
       }
    }
@@ -440,8 +440,8 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
                                   auto sz = std::min( surgeA.size(), replA.size() );                             
                                   for( auto i=0; i<sz; ++i )
                                   {
-                                     if( replA[i].second > 1e-6 ) // CI pipelines bounce around zero badly
-                                        REQUIRE( replA[i].second == Approx( surgeA[i].second ).margin( 1e-6 ) );
+                                     if( replA[i].second > 1e-5 ) // CI pipelines bounce around zero badly
+                                        REQUIRE( replA[i].second == Approx( surgeA[i].second ).margin( 1e-3 ) );
                                   }
                                };
 
@@ -450,10 +450,10 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
          
       for( int rc=0;rc<100; ++rc )
       {
-         float a = rand() * 1.0 / RAND_MAX + 0.03;
-         float d = rand() * 1.0 / RAND_MAX + 0.01;
-         float s = 0.7 * rand() * 1.0 / RAND_MAX + 0.1; // we have tested the s=0 case above
-         float r = rand() * 1.0 / RAND_MAX + 0.1; // smaller versions can get one bad point in the pipeline
+         float a = rand() * 1.0 / (float)RAND_MAX + 0.03;
+         float d = rand() * 1.0 / (float)RAND_MAX + 0.01;
+         float s = 0.7 * rand() * 1.0 / (float)RAND_MAX + 0.1; // we have tested the s=0 case above
+         float r = rand() * 1.0 / (float)RAND_MAX + 0.1; // smaller versions can get one bad point in the pipeline
          INFO(  "Testing " << rc << " with ADSR=" << a << " " << d << " " << s << " " << r );
          compareSrgRepl( a, d, s, r );
 
@@ -504,8 +504,8 @@ TEST_CASE( "ADSR Envelope Behaviour", "[mod]" )
       testSusPush( 0.3, 0.7 );
       for( auto i=0; i<10; ++i )
       {
-         auto s1 = 0.95f * rand() / RAND_MAX + 0.02;
-         auto s2 = 0.95f * rand() / RAND_MAX + 0.02;
+         auto s1 = 0.95f * rand() / (float)RAND_MAX + 0.02;
+         auto s2 = 0.95f * rand() / (float)RAND_MAX + 0.02;
          testSusPush( s1, s2 );
       }
    }
@@ -584,7 +584,7 @@ TEST_CASE( "Pitch Bend and Tuning", "[mod][tun]" )
          INFO( "Retuning pitch bend to " << sclf );
          auto s = Tunings::readSCLFile( sclf );
          surge->storage.retuneToScale(s);
-         for( int tests=0; tests<20; ++tests )
+         for( int tests=0; tests<30; ++tests )
          {
             int bUp = rand() % 24 + 1;
             int bDn = rand() % 24 + 1;
@@ -596,17 +596,23 @@ TEST_CASE( "Pitch Bend and Tuning", "[mod][tun]" )
             
             // Bend pitch and let it get there
             surge->pitchBend(0, 8192);
-            for( int i=0; i<100; ++i ) surge->process();
+            for( int i=0; i<500; ++i ) surge->process();
             
             auto fUpB = frequencyForNote( surge, 60 );
             
             // Bend pitch and let it get there
             surge->pitchBend(0, -8192);
-            for( int i=0; i<100; ++i ) surge->process();
+            for( int i=0; i<500; ++i ) surge->process();
             auto fDnB = frequencyForNote( surge, 60 );
+            auto dup = surge->storage.note_to_pitch( 60 + bUp + 2 ) - surge->storage.note_to_pitch( 60 + bUp );
+            dup = dup * 8.17;
             
-            REQUIRE( fUpD == Approx( fUpB ).margin( 3 * bUp ) );  // It can take a while for the midi lag to normalize and my pitch detector is so so
-            REQUIRE( fDnD == Approx( fDnB ).margin( 3 * bDn ) );
+            auto ddn = surge->storage.note_to_pitch( 60 - bDn ) - surge->storage.note_to_pitch( 60 - bDn - 2 );
+            ddn = ddn * 8.17;
+
+            INFO( "Pitch Bend " << bUp << " " << bDn << " " << fUpD << " " << fUpB << " " << dup << " " << ddn );
+            REQUIRE( fUpD == Approx( fUpB ).margin( dup ) );  // It can take a while for the midi lag to normalize and my pitch detector is so so
+            REQUIRE( fDnD == Approx( fDnB ).margin( ddn ) );
             
             surge->pitchBend( 0, 0 );
             for( int i=0; i<100; ++i ) surge->process();

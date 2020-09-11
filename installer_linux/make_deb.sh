@@ -23,7 +23,10 @@ fi
 # Valid version for DEB start with a digit.
 DEB_VERSION=$VERSION
 if [[ ${DEB_VERSION:0:1} =~ [0-9] ]]; then
-    echo "DEB VERSION same as Version"
+    echo "DEB VERSION same as Version (${DEB_VERSION})"
+elif [[ ${DEB_VERSION} = NIGHTLY* ]]; then
+    DEB_VERSION="9.${VERSION}"
+    echo "NIGHTLY; DEB VERSION is ${DEB_VERSION}"
 else
     DEB_VERSION="0.${VERSION}"
     echo "DEB VERSION is ${DEB_VERSION}"
@@ -39,9 +42,8 @@ PACKAGE_NAME="$SURGE_NAME"
 
 # Cleanup from failed prior runs
 rm -rf ${PACKAGE_NAME} product
-mkdir -p ${PACKAGE_NAME}/usr/lib/vst
 mkdir -p ${PACKAGE_NAME}/usr/lib/vst3
-mkdir -p ${PACKAGE_NAME}/usr/lib/lv2
+# mkdir -p ${PACKAGE_NAME}/usr/lib/lv2
 mkdir -p ${PACKAGE_NAME}/usr/share/${SURGE_NAME}/doc
 mkdir -p ${PACKAGE_NAME}/DEBIAN
 chmod -R 0755 ${PACKAGE_NAME}
@@ -63,7 +65,7 @@ Provides: vst-plugin
 Section: sound
 Priority: optional
 Description: Subtractive hybrid synthesizer virtual instrument
- Surge includes VST2, VST3, and LV2 virtual instrument formats for use in compatible hosts.
+ Surge includes VST3, and LV2 virtual instrument formats for use in compatible hosts.
 EOT
 
 touch ${PACKAGE_NAME}/usr/share/${SURGE_NAME}/doc/changelog.Debian
@@ -83,18 +85,23 @@ gzip -9 -n ${PACKAGE_NAME}/usr/share/${SURGE_NAME}/doc/changelog.Debian
 
 cp ../LICENSE ${PACKAGE_NAME}/usr/share/${SURGE_NAME}/doc/copyright
 cp -r ../resources/data/* ${PACKAGE_NAME}/usr/share/${SURGE_NAME}/
-cp ../products/Surge.so ${PACKAGE_NAME}/usr/lib/vst/${SURGE_NAME}.so
 
-# Once VST3 works, this will be ../products/vst3
-cp -r ../products/Surge.vst3 ${PACKAGE_NAME}/usr/lib/vst3/
+# Copy the VST3 bundld 
+cp -r ../build/surge_products/Surge.vst3 ${PACKAGE_NAME}/usr/lib/vst3/
+
+if [[ -d ../surge-fx/build/product/ ]]; then
+    cp -r ../surge-fx/build/product/*vst3 ${PACKAGE_NAME}/usr/lib/vst3/
+fi
 
 # copy the lv2 bundle
-cp -r ../products/Surge.lv2 ${PACKAGE_NAME}/usr/lib/lv2/
+# cp -r ../build/surge_products/Surge.lv2 ${PACKAGE_NAME}/usr/lib/lv2/
 
 # set permissions on shared libraries
-chmod -R 0644 ${PACKAGE_NAME}/usr/lib/vst/${SURGE_NAME}.so
 find ${PACKAGE_NAME}/usr/lib/vst3/ -type f -iname "*.so" | xargs chmod 0644
-find ${PACKAGE_NAME}/usr/lib/lv2/ -type f -iname "*.so" | xargs chmod 0644
+# find ${PACKAGE_NAME}/usr/lib/lv2/ -type f -iname "*.so" | xargs chmod 0644
+
+echo "----- LIBRARY CONTENTS (except resource) -----"
+find ${PACKAGE_NAME}/usr/lib -print
 
 # build package
 
@@ -104,4 +111,3 @@ rm -rf ${PACKAGE_NAME}
 
 echo "Built DEB Package"
 pwd
-ls -l product

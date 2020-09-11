@@ -1,55 +1,34 @@
 #include "effect_defs.h"
-
-#define _D(x) " " << (#x) << "=" << x
+#include "Tunings.h"
+#include "DebugHelpers.h"
+#include <algorithm>
 
 enum flangparam
 {
    // Basic Control
-   flng_rate = 0, // How quickly the oscillations happen
+   flng_mode = 0, // flange, phase-inverse-flange, arepeggio, vibrato
+   flng_wave, // what's the wave shape
+   flng_rate, // How quickly the oscillations happen
    flng_depth, // How extreme the modulation of the delay is
-   flng_mode, // flange, phase-inverse-flange, arepeggio, vibrato
-
+   
    // Voices
    flng_voices, // how many delay lines
-   
    flng_voice_zero_pitch, // tune the first max delay line to this (M = sr / f)
-   flng_voice_detune, // spread in cents among the delay lines   
-   flng_voice_chord, // tuning for the voices as a chord in tuning space
+   flng_voice_spacing, // How far apart are the combs in pitch space
 
    // Feedback and EQ
    flng_feedback, // how much the output feeds back into the filters
    flng_fb_lf_damping, // how much low pass damping in the feedback mechanism
-   flng_gain, // How much gain before we run into the final clipper
    flng_stereo_width, // how much to pan the delay lines ( 0 -> all even; 1 -> full spread)
    flng_mix, // how much we add the comb into the mix
    
    flng_num_params,
 };
 
-enum flangermode // match this with the string gneerator in Parameter.cpp pls
-{
-   unisontri,
-   unisonsin,
-   unisonsaw,
-   unisonsandh,
-   
-   dopplertri,
-   dopplersin,
-   dopplersaw,
-   dopplersandh,
-
-   arptri,
-   arpsin,
-   arpsaw,
-   arpsandh,
-
-   n_flanger_modes
-};
-
 FlangerEffect::FlangerEffect(SurgeStorage* storage, FxStorage* fxdata, pdata* pd)
     : Effect(storage, fxdata, pd)
 {
-   init();
+   haveProcessed = false;
 }
 
 FlangerEffect::~FlangerEffect()
@@ -62,8 +41,10 @@ void FlangerEffect::init()
       for( int i=0; i<COMBS_PER_CHANNEL; ++i )
       {
          lfophase[c][i] =  1.f * ( i + 0.5 * c ) / COMBS_PER_CHANNEL;
+         lfosandhtarget[c][i] = 0.0;
       }
-   longphase = 0;
+   longphase[0] = 0;
+   longphase[1] = 0.5;
    
    for( int i=0; i<LFO_TABLE_SIZE; ++i )
    {
@@ -76,12 +57,8 @@ void FlangerEffect::init()
       auto piby2 = M_PI / 2.0;
       auto lW = sqrt( ( piby2 - panAngle ) / piby2 * cos( panAngle ) );
       auto rW = sqrt( panAngle * sin( panAngle ) / piby2 );
-      panL_table[i] = lW;
-      panR_table[i] = rW;
    }
-   // Make sure my endpoints are exact for pans
-   panL_table[0] = 1; panL_table[LFO_TABLE_SIZE-1] = 0;
-   panR_table[0] = 0; panR_table[LFO_TABLE_SIZE-1] = 1;
+   haveProcessed = false;
 }
 
 void FlangerEffect::setvars(bool init)
@@ -91,20 +68,34 @@ void FlangerEffect::setvars(bool init)
 
 void FlangerEffect::process(float* dataL, float* dataR)
 {
+   if( ! haveProcessed )
+   {
+      float v0 = *f[flng_voice_zero_pitch];
+      if( v0 > 0 )
+         haveProcessed = true;
+      vzeropitch.startValue(v0);
+   }
    // So here is a flanger with everything fixed
 
-   float rate = envelope_rate_linear(-*f[flng_rate]) * (fxdata->p[flng_rate].temposync ? storage->temposyncratio : 1.f);
+   float rate = envelope_rate_linear(-limit_range( *f[flng_rate], -8.f, 10.f ) ) * (fxdata->p[flng_rate].temposync ? storage->temposyncratio : 1.f);
 
-   longphase += rate;
-   if( longphase >= COMBS_PER_CHANNEL ) longphase -= COMBS_PER_CHANNEL;
+   for( int c=0; c<2; ++c )
+   {
+      longphase[c] += rate;
+      if( longphase[c] >= COMBS_PER_CHANNEL ) longphase[c] -= COMBS_PER_CHANNEL;
+   }
    
-   const float oneoverFreq0 = 1.0f / 8.175798915;
+   const float oneoverFreq0 = 1.0f / Tunings::MIDI_0_FREQ;
 
    int mode = *pdata_ival[flng_mode];
-   int mtype = mode / 4;
-   int mwave = mode % 4;
-
+   int mwave = *pdata_ival[flng_wave];
+   
    float v0 = *f[flng_voice_zero_pitch];
+   vzeropitch.newValue(v0);
+   vzeropitch.process();
+   v0 = vzeropitch.v;
+   float averageDelayBase = 0.0;
+   
    for( int c=0; c<2; ++c )
       for( int i=0; i<COMBS_PER_CHANNEL; ++i )
       {
@@ -118,116 +109,140 @@ void FlangerEffect::process(float* dataL, float* dataR)
          }
          float lfoout = lfoval[c][i].v;
          float thisphase = lfophase[c][i];
-         if( mtype == 2 )
+         if( mode == arp_mix || mode == arp_solo )
          {
             // arpeggio - everyone needs to use the same phase with the voice swap
-            thisphase = longphase - (int)longphase;
+            thisphase = longphase[c] - (int)longphase[c];
          }
          switch( mwave )
          {
-         case 0: // sin
+         case sinw: // sin
          {
             float ps = thisphase * LFO_TABLE_SIZE;
             int psi = (int)ps;
             float psf = ps - psi;
             int psn = (psi+1) & LFO_TABLE_MASK;
             lfoout = sin_lfo_table[psi] * ( 1.0 - psf ) + psf * sin_lfo_table[psn];
+            lfoval[c][i].newValue(lfoout);
          }
          break;
-         case 1: // triangle
+         case triw: // triangle
             lfoout = (2.f * fabs(2.f * thisphase - 1.f) - 1.f);
+            lfoval[c][i].newValue(lfoout);
             break;
-         case 2: // saw - but we gotta be gentler than a pure saw. So FIXME on this waveform
-            lfoout = thisphase * 2.0f - 1.f;
+         case saww: // saw - but we gotta be gentler than a pure saw. So do more like a heavily skewed triangle
+         {
+            float cutSawAt = 0.95;
+            if( thisphase < cutSawAt )
+            {
+               auto usephase = thisphase / cutSawAt;
+               lfoout = usephase * 2.0f - 1.f;
+            }
+            else
+            {
+               auto usephase = ( thisphase - cutSawAt ) / (1.0 - cutSawAt);
+               lfoout = (1.0-usephase) * 2.f - 1.f;
+            }
+            lfoval[c][i].newValue(lfoout);
             break;
-         case 3: // S&H random noise. Needs smoothing over the jump like the triangle
+         }
+         case sandhw: // S&H random noise. Needs smoothing over the jump like the triangle
+         {
             if( lforeset )
             {
-               lfoout = 1.f * rand() / RAND_MAX  - 1.f;
+               lfosandhtarget[c][i] = 1.f * rand() / (float)RAND_MAX  - 1.f;
             }
+            // FIXME - exponential creep up. We want to get there in a time related to our rate
+            auto cv = lfoval[c][i].v;
+            auto diff = (lfosandhtarget[c][i] - cv) * rate * 2;
+            lfoval[c][i].newValue(cv + diff);
+         }
+         break;
          }
 
-         lfoval[c][i].newValue(lfoout);
 
-         auto ichord = *pdata_ival[flng_voice_chord];
-         float pitch = v0;
-         switch( ichord )
+         auto combspace = *f[flng_voice_spacing];
+         float pitch = v0 + combspace * i;
+         float nv = samplerate * oneoverFreq0 * storage->note_to_pitch_inv((float)(pitch));
+
+         // OK so biggest  tap = delaybase[c][i].v * ( 1.0 + lfoval[c][i].v * depth.v ) + 1;
+         // Assume lfoval is [-1,1] and depth is known
+         float maxtap = nv * ( 1.0 + limit_range( *f[flng_depth], 0.f, 2.f ) ) + 1;
+         if( maxtap >= InterpDelay::DELAY_SIZE )
          {
-         case 0: // unisons
-            pitch = v0;
-            break;
-         case 1: // ocraves
-            pitch = v0 + i * storage->currentScale.count;
-            break;
-         case 2: // m2nds up to 5ths
-         case 3:
-         case 4:
-         case 5:
-         case 6:
-         case 7:
-         case 8:
-         {
-            auto step = ichord - 1;
-            pitch = v0 + step * i;
+            nv = nv * 0.999 * InterpDelay::DELAY_SIZE / maxtap;
          }
-            break;
-         case 9:
-            pitch = v0 + ( i == 1 ? 4 : ( i == 2 ?  7 : 12 ) );
-            break;
-         case 10:
-            pitch = v0 + ( i == 1 ? 3 : ( i == 2 ?  7 : 12 ) );
-            break;
-         case 11:
-            pitch = v0 + ( i == 1 ? 4 : ( i == 2 ?  7 : 10 ) );
-            break;
-         case 12:
-            pitch = v0 + ( i == 1 ? 4 : ( i == 2 ?  7 : 11 ) );
-            break;
-         default:
-            pitch = v0;
-            break;
-         };
-         pitch += *f[flng_voice_detune] * i;
-         
-         delaybase[c][i].newValue( samplerate * oneoverFreq0 * storage->note_to_pitch_inv((float)(pitch)) );
+         delaybase[c][i].newValue( nv );
+
+         averageDelayBase += delaybase[c][i].new_v;
       }
+   averageDelayBase /= ( 2 * COMBS_PER_CHANNEL );
+   vzeropitch.process();
    
-   depth.newValue( *f[flng_depth] );
+   float dApprox = rate * samplerate / BLOCK_SIZE * averageDelayBase * *f[flng_depth];
+   
+   depth.newValue( limit_range( *f[flng_depth], 0.f, 2.f ) );
    mix.newValue( *f[flng_mix] );
-   float feedbackScale = 0.4;
-   if( mtype == 1 )
+   voices.newValue( limit_range( *f[flng_voices], 1.f, 4.f ) );
+   float feedbackScale = 0.4 * sqrt( ( limit_range( dApprox, 2.f, 60.f ) + 30 ) / 100.0 );
+
+   // Feedbackadjust based on mode
+   switch( mode )
    {
-      feedbackScale = 0.6;
-   }
-   if( mtype == 2 )
+   case classic:
    {
-      feedbackScale = 0.9;
+      float dv = ( voices.v - 1 );
+      feedbackScale += ( 3.0 - dv ) * 0.45 / 3.0;
+      break;
    }
+   case doppler:
+   {
+      float dv = ( voices.v - 1 );
+      feedbackScale += ( 3.0 - dv ) * 0.45 / 3.0;
+      break;
+   }
+   case arp_solo:
+   {
+      feedbackScale += 0.2; // this is one voice doppler basically
+   }
+   case arp_mix:
+   {
+      feedbackScale += 0.3; // this is one voice classic basically and the steady signal clamps away feedback more
+   }
+   default:
+      break;
+   }
+
    float fbv = *f[flng_feedback];
    if( fbv > 0 )
       ringout_value = samplerate * 32.0;
    else
       ringout_value = 1024;
+
+   if( mwave == saww || mwave == sandhw )
+   {
+      feedbackScale *= 0.7;
+   }
    
-   fbv = fbv * fbv * fbv;
+   if( fbv < 0 ) fbv = fbv;
+   else if( fbv > 1 ) fbv = fbv;
+   else fbv = sqrt( fbv );
+
    feedback.newValue( feedbackScale * fbv ); 
    fb_lf_damping.newValue( 0.4 * *f[flng_fb_lf_damping ] );
-   gain.newValue( *f[flng_gain] );
-   stereo_width.newValue( *f[flng_stereo_width] );
-   
    float combs alignas(16)[2][BLOCK_SIZE];
 
    // Obviously when we implement stereo spread this will be different
-   float vweights[2][COMBS_PER_CHANNEL];
    for( int c=0; c<2; ++c )
    {
       for( int i=0; i<COMBS_PER_CHANNEL; ++i )
          vweights[c][i] = 0;
       
-      if( mtype == 2 )
+      if( mode == arp_mix || mode == arp_solo )
       {
-         int ilp = (int)longphase;
-         float flp = longphase - ilp;
+         int ilp = (int)longphase[c];
+         float flp = longphase[c] - ilp;
+
          if( ilp == COMBS_PER_CHANNEL )
             ilp = 0;
          
@@ -251,7 +266,7 @@ void FlangerEffect::process(float* dataL, float* dataR)
       }
       else
       {
-         float voices = *f[flng_voices];
+         float voices = limit_range( *f[flng_voices], 1.f, COMBS_PER_CHANNEL * 1.f );
          vweights[c][0] = 1.0;
          
          for( int i=0; i<voices && i < 4; ++i )
@@ -293,10 +308,11 @@ void FlangerEffect::process(float* dataL, float* dataR)
          fbr = 1.5 * fbr - 0.5 * fbr * fbr * fbr;
 
          // and now we have clipped, apply the damping. FIXME - move to one mul form
-         lpaL = lpaL * ( 1.0 - fb_lf_damping.v ) + fbl * fb_lf_damping.v;
+         float df = limit_range( fb_lf_damping.v, 0.01f, 0.99f );
+         lpaL = lpaL * ( 1.0 - df ) + fbl * df;
          fbl = fbl - lpaL;
 
-         lpaR = lpaR * ( 1.0 - fb_lf_damping.v ) + fbr * fb_lf_damping.v;
+         lpaR = lpaR * ( 1.0 - df ) + fbr * df;
          fbr = fbr - lpaR;
       }
       
@@ -306,24 +322,37 @@ void FlangerEffect::process(float* dataL, float* dataR)
       idels[1].push( vr );
       
       auto origw = 1.f;
-      if( mtype == 1 )
+      if( mode == doppler || mode == arp_solo )
       {
          // doppler modes
          origw = 0.f;
       }
 
-      float sw = limit_range( stereo_width.v, -1.f, 1.f );
-      int swi = (int)( ( sw + 1 ) * 0.5  * ( LFO_TABLE_SIZE - 1 ) ) & LFO_TABLE_MASK;
-      // so width = -1 gets me the 0 point (l=1,r=0) and width = 1 gets me the l=0,r=1
+      float outl = origw * dataL[b] + mix.v * combs[0][b];
+      float outr = origw * dataR[b] + mix.v * combs[1][b];
 
-      float popp = panL_table[swi];
-      float psam = panR_table[swi];
+      // Some gain heueirstics
+      float gainadj = 0.0;
+      switch( mode )
+      {
+      case classic:
+         gainadj = - 1 / sqrt(7 - voices.v);
+         break;
+      case doppler:
+         gainadj = - 1 / sqrt(8 - voices.v);
+         break;
+      case arp_mix:
+         gainadj = -1 / sqrt(6);
+         break;
+      case arp_solo:
+         gainadj = -1 / sqrt(7);
+         break;
+      }
       
-      float outl = origw * dataL[b] + mix.v * ( psam * combs[0][b] + popp * combs[1][b] );
-      float outr = origw * dataR[b] + mix.v * ( popp * combs[0][b] + psam * combs[1][b] );
+      gainadj -= 0.07 * mix.v;
 
-      outl = limit_range( (1.0f + gain.v ) * outl, -1.f, 1.f );
-      outr = limit_range( (1.0f + gain.v ) * outr, -1.f, 1.f );
+      outl = limit_range( (1.0f + gainadj ) * outl, -1.f, 1.f );
+      outr = limit_range( (1.0f + gainadj ) * outr, -1.f, 1.f );
       
       outl = 1.5 * outl - 0.5 * outl * outl * outl;
       outr = 1.5 * outr - 0.5 * outr * outr * outr;
@@ -335,15 +364,23 @@ void FlangerEffect::process(float* dataL, float* dataR)
       mix.process();
       feedback.process();
       fb_lf_damping.process();
-      gain.process();
-      stereo_width.process();
+      voices.process();
    }
+
+   width.set_target_smoothed(db_to_linear(*f[flng_stereo_width]) / 3);
+
+   float M alignas(16)[BLOCK_SIZE],
+         S alignas(16)[BLOCK_SIZE];
+   encodeMS(dataL, dataR, M, S, BLOCK_SIZE_QUAD);
+   width.multiply_block(S, BLOCK_SIZE_QUAD);
+   decodeMS(M, S, dataL, dataR, BLOCK_SIZE_QUAD);
+
 }
 
 float FlangerEffect::InterpDelay::value( float delayBy )
 {
    // so if delayBy is 19.2
-   int itap = (int) delayBy; // this is 19
+   int itap = (int) std::min( delayBy, (float)(DELAY_SIZE-2) ); // this is 19
    float fractap = delayBy - itap; // this is .2
    int k0 = ( k + DELAY_SIZE - itap - 1 ) & DELAY_SIZE_MASK; // this is 20 back
    int k1 = ( k + DELAY_SIZE - itap     ) & DELAY_SIZE_MASK; // this is 19 back
@@ -382,11 +419,11 @@ int FlangerEffect::group_label_ypos(int id)
    case 0:
       return 1;
    case 1:
-      return 9;
+      return 11;
    case 2:
       return 19;
    case 3:
-      return 27;
+      return 25;
    }
    return 0;
 }
@@ -395,14 +432,17 @@ void FlangerEffect::init_ctrltypes()
 {
    Effect::init_ctrltypes();
 
+   fxdata->p[flng_mode].set_name( "Mode" );
+   fxdata->p[flng_mode].set_type( ct_flangermode );
+
+   fxdata->p[flng_wave].set_name( "Waveform" );
+   fxdata->p[flng_wave].set_type( ct_flangerwave );
+
    fxdata->p[flng_rate].set_name( "Rate" );
    fxdata->p[flng_rate].set_type( ct_lforate );
 
    fxdata->p[flng_depth].set_name( "Depth" );
    fxdata->p[flng_depth].set_type( ct_percent );
-
-   fxdata->p[flng_mode].set_name( "Mode" );
-   fxdata->p[flng_mode].set_type( ct_flangermode );
 
    fxdata->p[flng_voices].set_name( "Count" );
    fxdata->p[flng_voices].set_type( ct_flangervoices );
@@ -410,29 +450,23 @@ void FlangerEffect::init_ctrltypes()
    fxdata->p[flng_voice_zero_pitch].set_name( "Base Pitch" );
    fxdata->p[flng_voice_zero_pitch].set_type( ct_flangerpitch );
 
-   fxdata->p[flng_voice_detune].set_name( "Detune" );
-   fxdata->p[flng_voice_detune].set_type( ct_percent_bidirectional );
-
-   fxdata->p[flng_voice_chord].set_name( "Chord" );
-   fxdata->p[flng_voice_chord].set_type( ct_flangerchord );
+   fxdata->p[flng_voice_spacing].set_name( "Spacing" );
+   fxdata->p[flng_voice_spacing].set_type( ct_flangerspacing );
 
    fxdata->p[flng_feedback].set_name( "Feedback" );
    fxdata->p[flng_feedback].set_type( ct_percent );
 
-   fxdata->p[flng_fb_lf_damping].set_name( "LF Damp" );
+   fxdata->p[flng_fb_lf_damping].set_name( "LF Damping" );
    fxdata->p[flng_fb_lf_damping].set_type( ct_percent );
 
-   fxdata->p[flng_gain].set_name( "Saturation" );
-   fxdata->p[flng_gain].set_type( ct_percent_bidirectional );
-
    fxdata->p[flng_stereo_width].set_name( "Width" );
-   fxdata->p[flng_stereo_width].set_type( ct_percent_bidirectional );
+   fxdata->p[flng_stereo_width].set_type( ct_decibel_narrow); 
 
    fxdata->p[flng_mix].set_name( "Mix" );
    fxdata->p[flng_mix].set_type( ct_percent_bidirectional );
 
 
-   for( int i=flng_rate; i<flng_num_params; ++i )
+   for( int i=flng_mode; i<flng_num_params; ++i )
    {
       auto a = 1;
       if( i >= flng_voices ) a += 2;
@@ -447,20 +481,15 @@ void FlangerEffect::init_default_values()
 {
    fxdata->p[flng_rate].val.f = -2.f;
    fxdata->p[flng_depth].val.f = 1.f;
-   fxdata->p[flng_mix].val.f = 0.8f;
 
-   //flng_mode, // flange, phase-inverse-flange, arepeggio, vibrato
-
-   // Voices
-
-   fxdata->p[flng_voices].val.f = 4.0f;
+   fxdata->p[flng_voices].val.f = 4.f;
    fxdata->p[flng_voice_zero_pitch].val.f = 60.f;
-   fxdata->p[flng_voice_detune].val.f = 0;
-   fxdata->p[flng_voice_chord].val.i = 0;
+   fxdata->p[flng_voice_spacing].val.f = 0.f;
    
-   //flng_feedback, // how much the output feeds back into the filters
    fxdata->p[flng_feedback].val.f = 0.f;
    fxdata->p[flng_fb_lf_damping].val.f = 0.1f;
-   fxdata->p[flng_stereo_width].val.f = 1.0f;
+   
+   fxdata->p[flng_stereo_width].val.f = 0.f;
+   fxdata->p[flng_mix].val.f = 0.8f;
 
 }

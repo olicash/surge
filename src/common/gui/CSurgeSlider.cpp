@@ -1,13 +1,29 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
+#include "SurgeGUIEditor.h"
 #include "CSurgeSlider.h"
 #include "resource.h"
 #include "DspUtilities.h"
 #include "MouseCursorControl.h"
 #include "CScalableBitmap.h"
 #include "SurgeBitmaps.h"
+#include "SurgeStorage.h"
+#include <UserDefaults.h>
 #include <iostream>
+
 
 using namespace VSTGUI;
 using namespace std;
@@ -20,6 +36,8 @@ enum
    cs_drag = 1,
 };
 
+class SurgeStorage;
+
 CSurgeSlider::MoveRateState CSurgeSlider::sliderMoveRateState = kUnInitialized;
 
 CSurgeSlider::CSurgeSlider(const CPoint& loc,
@@ -27,14 +45,18 @@ CSurgeSlider::CSurgeSlider(const CPoint& loc,
                            IControlListener* listener,
                            long tag,
                            bool is_mod,
-                           std::shared_ptr<SurgeBitmaps> bitmapStore)
+                           std::shared_ptr<SurgeBitmaps> bitmapStore,
+                           SurgeStorage* storage)
     : CCursorHidingControl(CRect(loc, CPoint(1, 1)), listener, tag, 0)
 {
    this->style = stylee;
    this->is_mod = is_mod;
+   
+   this->storage = storage;
 
    modmode = 0;
    disabled = false;
+   deactivated = false;
 
    label[0] = 0;
    leftlabel[0] = 0;
@@ -61,10 +83,6 @@ CSurgeSlider::CSurgeSlider(const CPoint& loc,
 
    if (style & CSlider::kHorizontal)
    {
-      pTray = bitmapStore->getBitmap(IDB_FADERH_BG);
-      pHandle = bitmapStore->getBitmap(IDB_FADERH_HANDLE);
-      pTempoSyncHandle = bitmapStore->getBitmapByStringID( "TEMPOSYNC_HORIZONTAL_OVERLAY" );
-      
       if (style & kWhite)
          typehy = 1;
 
@@ -78,10 +96,6 @@ CSurgeSlider::CSurgeSlider(const CPoint& loc,
    {
       if (!(style & CSlider::kTop))
          style |= CSlider::kBottom; // CSlider::kBottom by default
-
-      pTray = bitmapStore->getBitmap(IDB_FADERV_BG);
-      pHandle = bitmapStore->getBitmap(IDB_FADERV_HANDLE);
-      pTempoSyncHandle = bitmapStore->getBitmapByStringID( "TEMPOSYNC_VERTICAL_OVERLAY" );
 
       if (style & kWhite)
          typehy = 0;
@@ -169,6 +183,19 @@ void CSurgeSlider::draw(CDrawContext* dc)
    if (has_modulation_current)
       typex = 2;
 
+   float slider_alpha = (disabled || deactivated) ? 0.35 : 1.0;
+   bool showHandle = true;
+#if LINUX
+   // linux transparency is a bit broken (i have it patched to ignored) as described in
+   // #2053. For now just disable handles on linux transparent sliders, which is a bummer
+   // but better than a mispaint, then come back to this after 1.7.0
+   if( disabled || deactivated )
+   {
+      showHandle = false;
+      slider_alpha = 1.0;
+   }
+#endif
+
    if (pTray)
    {
       // CRect trect(0,0,pTray->getWidth(),pTray->getHeight());
@@ -185,20 +212,12 @@ void CSurgeSlider::draw(CDrawContext* dc)
       else
          trect.offset(2, 2);
 
-      int alpha = 0xff;
-      if (disabled)
-      {
-         typex = 0;
-         alpha = 0x80;
-      }
 
       if (style & CSlider::kHorizontal)
-         pTray->draw(dc, trect, CPoint(133 * typex, 14 * typey), alpha);
+         pTray->draw(dc, trect, CPoint(133 * typex, 14 * typey), slider_alpha);
       else
-         pTray->draw(dc, trect, CPoint(16 * typex, 75 * typey), alpha);
+         pTray->draw(dc, trect, CPoint(16 * typex, 75 * typey), slider_alpha);
    }
-   if (disabled)
-      return;
 
    CRect headrect;
    if (style & CSlider::kHorizontal)
@@ -253,14 +272,22 @@ void CSurgeSlider::draw(CDrawContext* dc)
    if( modmode )
    {
       CRect trect = hrect;
-      const CColor ColBar = skin->getColor( "slider.modulation", CColor(173, 255, 107, 255 ) );
+      CRect trect2 = hrect;
+
+      CColor ColBar = skin->getColor("slider.modulation", CColor(173, 255, 107, 255));
+      CColor ColBarNeg = skin->getColor("slider.negative.modulation", CColor(173, 255, 107, 255));
+
+      ColBar.alpha = (int)(slider_alpha * 255.f);
+      ColBarNeg.alpha = (int)(slider_alpha * 255.f);
 
       // float moddist = modval * range;
       // We want modval + value to be bould by -1 and 1. So
       float modup = modval;
-      bool overtop = false;
       float moddn = modval;
+      bool overtop = false;
       bool overbot = false;
+      bool overotherside = false;
+
       if( modup + value > 1.f )
       {
          overtop = true;
@@ -269,6 +296,7 @@ void CSurgeSlider::draw(CDrawContext* dc)
       if( modup + value < 0.f )
       {
          overbot = true;
+         overotherside = true;
          modup = 0.f - value;
       }
       if( value - moddn < 0.f )
@@ -279,6 +307,7 @@ void CSurgeSlider::draw(CDrawContext* dc)
       if( value - moddn > 1.f )
       {
          overtop = true;
+         overotherside = true;
          moddn = value - 1.f;
       }
       // at some point in the future draw something special with overtop and overbot
@@ -296,12 +325,17 @@ void CSurgeSlider::draw(CDrawContext* dc)
       */
 
       std::vector<CRect> drawThese;
+      std::vector<CRect> drawTheseToo;
+
       if (style & CSlider::kHorizontal)
       {
          trect.top += 8;
          trect.bottom = trect.top + 2;
-         float modDistance = 40;
-         if( ! modulation_is_bipolar )
+
+         trect2.top += 8;
+         trect2.bottom = trect2.top + 2;
+
+         if (!modulation_is_bipolar)
          {
             trect.left += 11;
             trect.right = trect.left + modup;
@@ -310,37 +344,77 @@ void CSurgeSlider::draw(CDrawContext* dc)
          {
             trect.left += 11;
             trect.right = trect.left + modup;
-            trect.left -= moddn;
-         }
-         if( trect.left > trect.right )
-            std::swap( trect.left, trect.right );
-         drawThese.push_back( trect );
-
-         if( overtop )
-         {
-            CRect topr;
-            topr.top = trect.top;
-            topr.bottom = trect.bottom;
-            topr.left = trect.right + 1;
-            topr.right = topr.left + 3;
-            drawThese.push_back(topr);
+            
+            trect2.right -= 17;
+            trect2.left = trect2.right - moddn;
          }
 
-         if( overbot )
+         if (trect.left > trect.right)
+            std::swap(trect.left, trect.right);
+
+         if (trect2.left > trect2.right)
+            std::swap(trect2.left, trect2.right);
+         
+         drawThese.push_back(trect);
+         drawTheseToo.push_back(trect2);
+
+         if (overtop)
          {
             CRect topr;
-            topr.top = trect.top;
-            topr.bottom = trect.bottom;
-            topr.left = trect.left - 4;
-            topr.right = topr.left + 3;
-            drawThese.push_back(topr);
+
+            if (overotherside)
+            {
+               topr.top = trect2.top;
+               topr.bottom = trect2.bottom;
+               topr.left = trect2.right + 1;
+               topr.right = topr.left + 3;
+
+               drawTheseToo.push_back(topr);
+            }
+            else
+            {
+               topr.top = trect.top;
+               topr.bottom = trect.bottom;
+               topr.left = trect.right + 1;
+               topr.right = topr.left + 3;
+
+               drawThese.push_back(topr);
+            }
+         }
+
+         if (overbot)
+         {
+            CRect topr;
+
+            if (overotherside)
+            {
+               topr.top = trect.top;
+               topr.bottom = trect.bottom;
+               topr.left = trect.left - 4;
+               topr.right = topr.left + 3;
+
+               drawThese.push_back(topr);
+            }
+            else
+            {
+               topr.top = trect2.top;
+               topr.bottom = trect2.bottom;
+               topr.left = trect2.left - 4;
+               topr.right = topr.left + 3;
+
+               drawTheseToo.push_back(topr);
+            }
          }
       }
       else
       {
          trect.left += 8;
          trect.right = trect.left + 2;
-         if( ! modulation_is_bipolar )
+
+         trect2.left += 8;
+         trect2.right = trect2.left + 2;
+
+         if (!modulation_is_bipolar)
          {
             trect.top += 11;
             trect.bottom = trect.top - modup;
@@ -349,59 +423,99 @@ void CSurgeSlider::draw(CDrawContext* dc)
          {
             trect.top += 11;
             trect.bottom = trect.top - modup;
-            trect.top += moddn;
+
+            trect2.bottom -= 17;
+            trect2.top = trect2.bottom + moddn;
          }
 
-         if( overbot )
+         if (trect.top < trect.bottom)
+            std::swap(trect.top, trect.bottom);
+
+         if (trect2.top < trect2.bottom)
+            std::swap(trect2.top, trect2.bottom);
+
+         if (overbot)
          {
             CRect topr;
-            topr.left = trect.left;
-            topr.right = trect.right;
-            topr.bottom = trect.top + 1;
-            topr.top = topr.bottom + 3;
-            drawThese.push_back(topr);
+
+            if (overotherside)
+            {
+               topr.left = trect.left;
+               topr.right = trect.right;
+               topr.bottom = trect.top + 1;
+               topr.top = topr.bottom + 3;
+
+               drawThese.push_back(topr);
+            }
+            else
+            {
+               topr.left = trect2.left;
+               topr.right = trect2.right;
+               topr.bottom = trect2.top + 1;
+               topr.top = topr.bottom + 3;
+
+               drawTheseToo.push_back(topr);
+            }
          }
 
-         if( overtop )
+         if (overtop)
          {
             CRect topr;
-            topr.left = trect.left;
-            topr.right = trect.right;
-            topr.top = trect.top - 1;
-            topr.bottom = topr.top - 3;
-            drawThese.push_back(topr);
+
+            if (overotherside)
+            {
+               topr.left = trect2.left;
+               topr.right = trect2.right;
+               topr.bottom = trect2.bottom - 1;
+               topr.top = topr.bottom - 3;
+
+               drawTheseToo.push_back(topr);
+            }
+            else
+            {
+               topr.left = trect.left;
+               topr.right = trect.right;
+               topr.bottom = trect.bottom - 1;
+               topr.top = topr.bottom - 3;
+
+               drawThese.push_back(topr);
+            }
          }
 
-         if( trect.top < trect.bottom )
-            std::swap( trect.top, trect.bottom );
-         drawThese.push_back( trect );
+         drawThese.push_back(trect);
+         drawTheseToo.push_back(trect2);
       }
 
-      for( auto r : drawThese )
+      for (auto r : drawThese)
       {
-         dc->setFillColor( ColBar );
-         dc->drawRect( r, VSTGUI::kDrawFilled );
-         /*
-         dc->setLineWidth( 0.5 );
-         dc->setFrameColor( VSTGUI::kBlackCColor );
-         r.right += 0.9;
-         r.bottom += 0.9;
-         dc->drawRect( r, VSTGUI::kDrawStroked );
-         */
+         dc->setFillColor(ColBar);
+         dc->drawRect(r, VSTGUI::kDrawFilled);
+      }
+
+      if (modulation_is_bipolar)
+      {
+          for (auto r : drawTheseToo)
+          {
+             dc->setFillColor(ColBarNeg);
+             dc->drawRect(r, VSTGUI::kDrawFilled);
+          }
       }
    }
    
 
-   if (pHandle && (modmode != 2))
+   if (pHandle && showHandle && (modmode != 2) && (!deactivated || !disabled))
    {
       if (style & CSlider::kHorizontal)
       {
-         pHandle->draw(dc, hrect, CPoint(0, 24 * typehy), modmode ? 0x7f : 0xff);
+         pHandle->draw(dc, hrect, CPoint(0, 24 * typehy), modmode ? slider_alpha : slider_alpha);
+         if( pHandleHover && in_hover )
+            pHandleHover->draw(dc, hrect, CPoint(0, 24 * typehy), modmode ? slider_alpha : slider_alpha);
+
          if( is_temposync )
          {
             if( pTempoSyncHandle )
             {
-               pTempoSyncHandle->draw( dc, hrect, CPoint( 0, 0 ), 0xff );
+               pTempoSyncHandle->draw(dc, hrect, CPoint(0, 0), slider_alpha);
             }
             else
             {
@@ -425,14 +539,17 @@ void CSurgeSlider::draw(CDrawContext* dc)
             }
          }
       }
-      else
+      else if ((!deactivated || !disabled))
       {
-         pHandle->draw(dc, hrect, CPoint(0, 28 * typehy), modmode ? 0x7f : 0xff);
+         pHandle->draw(dc, hrect, CPoint(0, 28 * typehy), modmode ? slider_alpha : slider_alpha); // used to be 0x80 which was solid - lets keep taht for now
+         if( pHandleHover && in_hover )
+            pHandleHover->draw(dc, hrect, CPoint(0, 28 * typehy), modmode ? slider_alpha : slider_alpha); // used to be 0x80 which was solid - lets keep taht for now
+
          if( is_temposync )
          {
             if( pTempoSyncHandle )
             {
-               pTempoSyncHandle->draw( dc, hrect, CPoint( 0, 0 ), 0xff );
+               pTempoSyncHandle->draw(dc, hrect, CPoint(0, 0), slider_alpha);
             }
             else
             {
@@ -463,7 +580,7 @@ void CSurgeSlider::draw(CDrawContext* dc)
    }
 
    // draw mod-fader
-   if (pHandle && modmode)
+   if (pHandle && showHandle && modmode && (!deactivated || !disabled))
    {
       CRect hrect(headrect);
       handle_rect = handle_rect_orig;
@@ -493,9 +610,17 @@ void CSurgeSlider::draw(CDrawContext* dc)
       }
 
       if (style & CSlider::kHorizontal)
-         pHandle->draw(dc, hrect, CPoint(28, 24 * typehy), 0xff);
+      {
+         pHandle->draw(dc, hrect, CPoint(28, 24 * typehy), slider_alpha);
+         if( pHandleHover && in_hover )
+            pHandleHover->draw(dc, hrect, CPoint(28, 24 * typehy), slider_alpha);
+      }
       else
-         pHandle->draw(dc, hrect, CPoint(24, 28 * typehy), 0xff);
+      {
+         pHandle->draw(dc, hrect, CPoint(24, 28 * typehy), slider_alpha);
+         if( pHandleHover && in_hover )
+            pHandleHover->draw(dc, hrect, CPoint(24, 28 * typehy), slider_alpha);
+      }
    }
 
    setDirty(false);
@@ -540,6 +665,16 @@ bool CSurgeSlider::isInMouseInteraction()
 
 CMouseEventResult CSurgeSlider::onMouseDown(CPoint& where, const CButtonState& buttons)
 {
+   {
+      auto sge = dynamic_cast<SurgeGUIEditor*>(listener);
+      if( sge )
+      {
+         sge->clear_infoview_peridle = 0;
+      }
+   }
+   if (storage)
+      this->hideCursor = !Surge::Storage::getUserDefaultValue(storage, "showCursorWhileEditing", 0);
+
    hasBeenDraggedDuringMouseGesture = false;
    if( wheelInitiatedEdit )
       while( editing )
@@ -547,8 +682,7 @@ CMouseEventResult CSurgeSlider::onMouseDown(CPoint& where, const CButtonState& b
    wheelInitiatedEdit = false;
    
    CCursorHidingControl::onMouseDown(where, buttons);
-   if (disabled)
-      return kMouseDownEventHandledButDontNeedMovedOrUpEvents;
+
    if (controlstate)
    {
 #if MAC
@@ -569,7 +703,7 @@ CMouseEventResult CSurgeSlider::onMouseDown(CPoint& where, const CButtonState& b
    {
       beginEdit();
       controlstate = cs_drag;
-      getFrame()->setCursor( VSTGUI::kCursorHand );
+      // getFrame()->setCursor( VSTGUI::kCursorHand );
       statezoom = 1.f;
 
       edit_value = modmode ? &modval : &value;
@@ -591,9 +725,16 @@ CMouseEventResult CSurgeSlider::onMouseDown(CPoint& where, const CButtonState& b
 
 CMouseEventResult CSurgeSlider::onMouseUp(CPoint& where, const CButtonState& buttons)
 {
+   {
+      auto sge = dynamic_cast<SurgeGUIEditor*>(listener);
+      if( sge )
+      {
+         sge->clear_infoview_peridle = -1;
+      }
+   }
+
    CCursorHidingControl::onMouseUp(where, buttons);
-   if (disabled)
-      return kMouseEventHandled;
+
    if (controlstate)
    {
 #if MAC
@@ -605,7 +746,7 @@ CMouseEventResult CSurgeSlider::onMouseUp(CPoint& where, const CButtonState& but
 #endif
       endEdit();
       controlstate = cs_none;
-      getFrame()->setCursor( VSTGUI::kCursorDefault );
+      // getFrame()->setCursor( VSTGUI::kCursorDefault );
       
       edit_value = nullptr;
 
@@ -614,13 +755,21 @@ CMouseEventResult CSurgeSlider::onMouseUp(CPoint& where, const CButtonState& but
    return kMouseEventHandled;
 }
 
+VSTGUI::CMouseEventResult CSurgeSlider::onMouseEntered(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons)
+{
+   in_hover = true;
+   invalid();
+   return kMouseEventHandled;
+}
+
 VSTGUI::CMouseEventResult CSurgeSlider::onMouseExited(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons)
 {
+   in_hover = false;
    if( wheelInitiatedEdit )
       while( editing )
          endEdit();
    wheelInitiatedEdit = false;
-
+   invalid();
    return kMouseEventHandled;
 }
 
@@ -661,9 +810,6 @@ void CSurgeSlider::onMouseMoveDelta(CPoint& where,
                                     double dx,
                                     double dy)
 {
-   if (disabled)
-      return;
-
    if( controlstate != cs_drag )
    {
       // FIXME - deal with modulation
@@ -696,11 +842,13 @@ void CSurgeSlider::onMouseMoveDelta(CPoint& where,
       {
          handle_rect.offset(1, dispv);
       }
-      
+
+      /*
       if( handle_rect.pointInside(where) )
          getFrame()->setCursor( VSTGUI::kCursorHand );
       else
          getFrame()->setCursor( VSTGUI::kCursorDefault );
+      */
    }
    
    if ((controlstate == cs_drag) && (buttons & kLButton))
@@ -776,7 +924,16 @@ bool CSurgeSlider::onWheel(const VSTGUI::CPoint& where, const float &distance, c
       wheelInitiatedEdit = true;
       beginEdit();
    }
-   *edit_value += rate * distance;
+   
+   if ( intRange && isStepped && !(buttons & kControl) )
+   {
+      *edit_value += distance / (intRange);
+   }
+   else
+   {
+      *edit_value += rate * distance;
+   }
+   
    bounceValue();
    if (modmode)
    {
@@ -797,4 +954,46 @@ bool CSurgeSlider::onWheel(const VSTGUI::CPoint& where, const float &distance, c
    */
    edit_value = nullptr;
    return true;
+}
+
+void CSurgeSlider::onSkinChanged()
+{
+   if (style & CSlider::kHorizontal)
+   {
+      pTray = associatedBitmapStore->getBitmap(IDB_FADERH_BG);
+      pHandle = associatedBitmapStore->getBitmap(IDB_FADERH_HANDLE);
+      pTempoSyncHandle = associatedBitmapStore->getBitmapByStringID( "TEMPOSYNC_HORIZONTAL_OVERLAY" );
+   }
+   else
+   {
+      pTray = associatedBitmapStore->getBitmap(IDB_FADERV_BG);
+      pHandle = associatedBitmapStore->getBitmap(IDB_FADERV_HANDLE);
+      pTempoSyncHandle = associatedBitmapStore->getBitmapByStringID( "TEMPOSYNC_VERTICAL_OVERLAY" );
+   }
+
+   if( skinControl.get() )
+   {
+      auto hi = skin->propertyValue( skinControl, "handle_image" );
+      if( hi.isJust() )
+      {
+         pHandle = associatedBitmapStore->getBitmapByStringID(hi.fromJust());
+      }
+      auto ho = skin->propertyValue( skinControl, "handle_hover_image" );
+      if( ho.isJust() )
+      {
+         pHandleHover = associatedBitmapStore->getBitmapByStringID(ho.fromJust());
+      }
+      auto ht = skin->propertyValue( skinControl, "handle_temposync_image" );
+      if( ht.isJust() )
+      {
+         pTempoSyncHandle = associatedBitmapStore->getBitmapByStringID(ht.fromJust());
+      }
+   }
+   
+   if( ! pHandleHover )
+      pHandleHover = skin->hoverBitmapOverlayForBackgroundBitmap(skinControl,
+                                                                 dynamic_cast<CScalableBitmap*>( pHandle ),
+                                                                 associatedBitmapStore,
+                                                                 Surge::UI::Skin::HoverType::HOVER);
+
 }

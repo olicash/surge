@@ -1,6 +1,18 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #pragma once
 
 #include "Effect.h"
@@ -133,8 +145,32 @@ private:
 class Eq3BandEffect : public Effect
 {
    lipol_ps gain alignas(16);
+   lipol_ps mix alignas(16);
+
+   float L alignas(16)[BLOCK_SIZE],
+         R alignas(16)[BLOCK_SIZE];
 
 public:
+   enum Params
+   {
+       eq3_gain1 = 0,
+       eq3_freq1,
+       eq3_bw1,
+
+       eq3_gain2,
+       eq3_freq2,
+       eq3_bw2,
+
+       eq3_gain3,
+       eq3_freq3,
+       eq3_bw3,
+
+       eq3_gain,
+       eq3_mix,
+
+       eq3_num_ctrls,
+   };
+
    Eq3BandEffect(SurgeStorage* storage, FxStorage* fxdata, pdata* pd);
    virtual ~Eq3BandEffect();
    virtual const char* get_effectname() override
@@ -153,6 +189,9 @@ public:
    virtual void init_default_values() override;
    virtual const char* group_label(int id) override; 
    virtual int group_label_ypos(int id) override;
+
+   virtual void handleStreamingMismatches(int streamingRevision, int currentSynthStreamingRevision) override;
+
 
 private:
    BiquadFilter band1, band2, band3;
@@ -200,6 +239,8 @@ private:
 class RotarySpeakerEffect : public Effect
 {
 public:
+   lipol_ps width alignas(16), mix alignas(16);
+
    RotarySpeakerEffect(SurgeStorage* storage, FxStorage* fxdata, pdata* pd);
    virtual ~RotarySpeakerEffect();
    virtual void process_only_control() override;
@@ -212,12 +253,15 @@ public:
    {
       return max_delay_length >> 5;
    }
+   void setvars(bool init);
    virtual void suspend() override;
    virtual void init() override;
    virtual void init_ctrltypes() override;
    virtual void init_default_values() override;
    virtual const char* group_label(int id) override;
    virtual int group_label_ypos(int id) override;
+
+   virtual void handleStreamingMismatches(int streamingRevision, int currentSynthStreamingRevision) override;
 
 protected:
    float buffer[max_delay_length];
@@ -229,7 +273,8 @@ protected:
    // f_rotor_lp[2][n_filter_parameters],f_xover[n_filter_parameters],f_lowbass[n_filter_parameters];
    quadr_osc lfo;
    quadr_osc lf_lfo;
-   lipol<float> dL, dR, drive, hornamp[2];
+   lipol<float> dL, dR, hornamp[2];
+   lag<float, true> drive;
    bool first_run;
 };
 
@@ -274,12 +319,11 @@ const int NVocoderVec = n_vocoder_bands >> 2;
 class VocoderEffect : public Effect
 {
 public:
-   enum
+   enum Params
    {
       KGain,
       KGateLevel,
       KRate,
-      // KUnvoicedThreshold,
       KQuality,
       KShift,
 
@@ -288,6 +332,8 @@ public:
       kFreqHi,
       kModExpand,
       kModCenter,
+
+      // KUnvoicedThreshold,
    };
 
    VocoderEffect(SurgeStorage* storage, FxStorage* fxdata, pdata* pd);
@@ -325,7 +371,7 @@ private:
    float mVoicedLevel;
    float mUnvoicedLevel;
 
-   biquadunit
+   BiquadFilter
            mVoicedDetect,
            mUnvoicedDetect;
    */
@@ -472,7 +518,8 @@ class Reverb2Effect : public Effect
       DELAY_LEN_MASK = MAX_DELAY_LEN - 1,
       DELAY_SUBSAMPLE_BITS = 8,
       DELAY_SUBSAMPLE_RANGE = (1 << DELAY_SUBSAMPLE_BITS),
-      PREDELAY_BUFFER_SIZE = 48000 * 4 * 2; // max sample rate is 48000 * 4 probably
+      PREDELAY_BUFFER_SIZE = 48000 * 4 * 4, // max sample rate is 48000 * 4 probably
+      PREDELAY_BUFFER_SIZE_LIMIT = 48000 * 4 * 3; // allow for one second of diffusion
 
    class allpass
    {
@@ -508,7 +555,7 @@ class Reverb2Effect : public Effect
       }
       float process( float in, int tap ) {
          k = ( k + 1 ); if( k == PREDELAY_BUFFER_SIZE ) k = 0;
-         auto p = k - tap; if( p < 0 ) p += PREDELAY_BUFFER_SIZE;
+         auto p = k - tap; while( p < 0 ) p += PREDELAY_BUFFER_SIZE;
          auto res = _data[p];
          _data[k] = in;
          return res;
@@ -580,12 +627,25 @@ private:
 
 class FlangerEffect : public Effect
 {
+   enum Modes {
+      classic,
+      doppler,
+      arp_mix,
+      arp_solo
+   };
+   enum Waves {
+      sinw,
+      triw,
+      saww,
+      sandhw
+   };
+   
    static const int COMBS_PER_CHANNEL = 4;
    struct InterpDelay {
       // OK so lets say we want lowest tunable frequency to be 23.5hz at 96k
       // 96000/23.5 = 4084
       // And lets future proof a bit and make it a power of 2 so we can use & properly
-      static const int DELAY_SIZE=8192, DELAY_SIZE_MASK = DELAY_SIZE - 1;
+      static const int DELAY_SIZE=32768, DELAY_SIZE_MASK = DELAY_SIZE - 1;
       float line[DELAY_SIZE];
       int k = 0;
       InterpDelay() { reset(); }
@@ -623,18 +683,59 @@ private:
    int ringout_value = -1;
    InterpDelay idels[2];
 
-   float lfophase[2][COMBS_PER_CHANNEL], longphase;
+   float lfophase[2][COMBS_PER_CHANNEL], longphase[2];
    float lpaL = 0.f, lpaR = 0.f; // state for the onepole LP filter
    
    lipol<float,true> lfoval[2][COMBS_PER_CHANNEL], delaybase[2][COMBS_PER_CHANNEL];
    lipol<float,true> depth, mix;
    lipol<float,true> voices, voice_detune, voice_chord;
-   lipol<float,true> feedback, fb_lf_damping, stereo_width, gain;
+   lipol<float,true> feedback, fb_lf_damping;
+   lag<float> vzeropitch;
+   float lfosandhtarget[2][COMBS_PER_CHANNEL];
+   float vweights[2][COMBS_PER_CHANNEL];
+
+   lipol_ps width;
+   bool haveProcessed = false;
    
    const static int LFO_TABLE_SIZE=8192;
    const static int LFO_TABLE_MASK=LFO_TABLE_SIZE-1;
    float sin_lfo_table[LFO_TABLE_SIZE];
    float saw_lfo_table[LFO_TABLE_SIZE]; // don't make it analytic since I want to smooth the edges
-   float panL_table[LFO_TABLE_SIZE];
-   float panR_table[LFO_TABLE_SIZE];
+};
+
+class RingModulatorEffect : public Effect
+{
+public:
+   static const int MAX_UNISON = 16;
+   
+   RingModulatorEffect(SurgeStorage* storage, FxStorage* fxdata, pdata* pd);
+   virtual ~RingModulatorEffect();
+   virtual const char* get_effectname() override
+   {
+      return "ringmodulator";
+   }
+   virtual void init() override;
+   virtual void process(float* dataL, float* dataR) override;
+   virtual void suspend() override;
+   void setvars(bool init);
+   virtual void init_ctrltypes() override;
+   virtual void init_default_values() override;
+
+   virtual const char* group_label(int id) override;
+   virtual int group_label_ypos(int id) override;
+
+   virtual int get_ringout_decay() override
+   {
+      return ringout_value;
+   }
+
+   float diode_sim( float x );
+
+private:
+   int ringout_value = -1;
+   float phase[MAX_UNISON], detune_offset[MAX_UNISON], panL[MAX_UNISON], panR[MAX_UNISON];
+   int last_unison = -1;
+
+   HalfRateFilter halfbandOUT, halfbandIN;
+   BiquadFilter lp, hp;
 };

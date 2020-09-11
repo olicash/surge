@@ -1,26 +1,31 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #include "SurgeSynthesizer.h"
 #include "DspUtilities.h"
 #include <time.h>
 #include <vt_dsp/vt_dsp_endian.h>
-#if LINUX
-#include <experimental/filesystem>
-#elif MAC || TARGET_RACK
-#include <filesystem.h>
-#else
-#include <filesystem>
-#endif
+
+#include "ImportFilesystem.h"
+
 #include <fstream>
 #include <iterator>
 #include "UserInteractions.h"
 
-#if WINDOWS && ( _MSC_VER >= 1920 )
-// vs2019
-namespace fs = std::filesystem;
-#else
-namespace fs = std::experimental::filesystem;
+#if TARGET_AUDIOUNIT
+#include "aulayer.h"
 #endif
 
 #if AU
@@ -159,11 +164,37 @@ bool SurgeSynthesizer::loadPatchByPath( const char* fxpPath, int categoryId, con
    if (!f)
       return false;
    fxChunkSetCustom fxp;
-   fread(&fxp, sizeof(fxChunkSetCustom), 1, f);
+   auto read = fread(&fxp, sizeof(fxChunkSetCustom), 1, f);
+   // FIXME - error if read != chunk size
    if ((vt_read_int32BE(fxp.chunkMagic) != 'CcnK') || (vt_read_int32BE(fxp.fxMagic) != 'FPCh') ||
        (vt_read_int32BE(fxp.fxID) != 'cjs3'))
    {
       fclose(f);
+      auto cm = vt_read_int32BE(fxp.chunkMagic);
+      auto fm = vt_read_int32BE(fxp.fxMagic);
+      auto id = vt_read_int32BE(fxp.fxID);
+
+      std::ostringstream oss;
+      oss << "Unable to load patch " << patchName << ". ";
+      if( cm != 'CcnK' )
+      {
+         oss << "ChunkMagic is not 'CcnK'. ";
+      }
+      if( fm != 'FPCh' )
+      {
+         oss << "FxMagic is not 'FPCh'. ";
+      }
+      if( id != 'cjs3' )
+      {
+         union {
+            char c[4];
+            int id;
+         } q;
+         q.id = id;
+         oss << "Synth id is '" << q.c[0] << q.c[1] << q.c[2] << q.c[3] << "'; Surge expected 'cjs3'. ";
+      }
+      oss << "This error usually occurs when you attempt to load an .fxp file for an instrument other than Surge into Surge.";
+      Surge::UserInteractions::promptError( oss.str(), "Loading Non-Surge FXP" );
       return false;
    }
 
@@ -238,14 +269,6 @@ bool SurgeSynthesizer::loadPatchByPath( const char* fxpPath, int categoryId, con
    }
    
    masterfade = 1.f;
-#if AU
-   /*	AUPreset preset;
-           preset.presetNumber = patchid;
-           preset.presetName =
-      CFStringCreateWithCString(NULL,storage.patch_list[patchid].name.c_str(),
-      kCFStringEncodingUTF8);
-           ((aulayer*)parent)->SetAFactoryPresetAsCurrent(preset);*/
-#endif
    /*
    ** Notify the host display that the patch name has changed
    */

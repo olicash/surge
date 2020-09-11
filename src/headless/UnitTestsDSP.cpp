@@ -10,6 +10,7 @@
 #include "catch2.hpp"
 
 #include "UnitTestUtilities.h"
+#include "FastMath.h"
 
 using namespace Surge::Test;
 
@@ -191,7 +192,7 @@ TEST_CASE( "Unison at Sample Rates", "[osc]" )
                             {
                                REQUIRE( surge->loadPatchByPath( pn, -1, "Test" ) );
                                int note = rand() % 70 + 22;
-                               float abss = rand() * 1.f / RAND_MAX * 0.8 + 0.15;
+                               float abss = rand() * 1.f / (float)RAND_MAX * 0.8 + 0.15;
                                auto ap = &(surge->storage.getPatch().scene[0].osc[0].p[n_osc_params - 2]);
                                ap->set_value_f01(abss);
                                char txt[256];
@@ -206,7 +207,7 @@ TEST_CASE( "Unison at Sample Rates", "[osc]" )
                             }
                          };
 
-   std::vector<int> srs = { { 44100, 48000, 88200, 96000 } };
+   std::vector<int> srs = { { 44100, 48000 } };
 
    SECTION( "Wavetable Oscillator" )
    {
@@ -343,6 +344,82 @@ TEST_CASE( "lipol_ps class", "[dsp]" )
       prevtarget = target;
    }
       
+}
+
+TEST_CASE( "Check FastMath Functions", "[dsp]" )
+{
+   SECTION( "fastSin and fastCos in range -PI, PI" )
+   {
+      float sds = 0, md = 0;
+      int nsamp = 100000;
+      for( int i=0; i<nsamp; ++i )
+      {
+         float p = 2.f * M_PI * rand() / RAND_MAX - M_PI;
+         float cp = std::cos(p);
+         float sp = std::sin(p);
+         float fcp = Surge::DSP::fastcos(p);
+         float fsp = Surge::DSP::fastsin(p);
+
+         float cd = fabs( cp - fcp );
+         float sd = fabs( sp - fsp );
+         if ( cd > md ) md = cd;
+         if ( sd > md ) md = sd;
+         sds += cd * cd + sd * sd;
+      }
+      sds = sqrt(sds) / nsamp;
+      REQUIRE( md < 1e-4 );
+      REQUIRE( sds < 1e-6 );
+   }
+
+   SECTION( "fastSin and fastCos in range -10*PI, 10*PI with clampRange" )
+   {
+      float sds = 0, md = 0;
+      int nsamp = 100000;
+      for( int i=0; i<nsamp; ++i )
+      {
+         float p = 2.f * M_PI * rand() / RAND_MAX - M_PI;
+         p *= 10;
+         p = Surge::DSP::clampToPiRange( p );
+         float cp = std::cos(p);
+         float sp = std::sin(p);
+         float fcp = Surge::DSP::fastcos(p);
+         float fsp = Surge::DSP::fastsin(p);
+
+         float cd = fabs( cp - fcp );
+         float sd = fabs( sp - fsp );
+         if ( cd > md ) md = cd;
+         if ( sd > md ) md = sd;
+         sds += cd * cd + sd * sd;
+      }
+      sds = sqrt(sds) / nsamp;
+      REQUIRE( md < 1e-4 );
+      REQUIRE( sds < 1e-6 );
+   }
+
+   SECTION( "fastSin and fastCos in range -100*PI, 100*PI with clampRange" )
+   {
+      float sds = 0, md = 0;
+      int nsamp = 100000;
+      for( int i=0; i<nsamp; ++i )
+      {
+         float p = 2.f * M_PI * rand() / RAND_MAX - M_PI;
+         p *= 100;
+         p = Surge::DSP::clampToPiRange( p );
+         float cp = std::cos(p);
+         float sp = std::sin(p);
+         float fcp = Surge::DSP::fastcos(p);
+         float fsp = Surge::DSP::fastsin(p);
+
+         float cd = fabs( cp - fcp );
+         float sd = fabs( sp - fsp );
+         if ( cd > md ) md = cd;
+         if ( sd > md ) md = sd;
+         sds += cd * cd + sd * sd;
+      }
+      sds = sqrt(sds) / nsamp;
+      REQUIRE( md < 1e-4 );
+      REQUIRE( sds < 1e-6 );
+   }
 }
 
 // When we return to #1514 this is a good starting point

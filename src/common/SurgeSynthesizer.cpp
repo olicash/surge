@@ -1,6 +1,18 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #include "SurgeSynthesizer.h"
 #include "DspUtilities.h"
 #include <time.h>
@@ -51,6 +63,7 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer* parent, std::string suppliedData
    , halfbandIN(6, true)
 {
    switch_toggled_queued = false;
+   audio_processing_active = false;
    halt_engine = false;
    release_if_latched[0] = true;
    release_if_latched[1] = true;
@@ -136,8 +149,8 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer* parent, std::string suppliedData
    polydisplay = 0;
    refresh_editor = false;
    patch_loaded = false;
-   storage.getPatch().category = "init";
-   storage.getPatch().name = "init";
+   storage.getPatch().category = "Init";
+   storage.getPatch().name = "Init";
    storage.getPatch().comment = "";
    storage.getPatch().author = "";
    midiprogramshavechanged = false;
@@ -153,6 +166,7 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer* parent, std::string suppliedData
    patchid_queue = -1;
    patchid = -1;
    CC0 = 0;
+   CC32 = 0;
    PCH = 0;
    for (int i = 0; i < 8; i++)
    {
@@ -176,7 +190,24 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer* parent, std::string suppliedData
     
    mtsclient=MTS_RegisterClient();
 
-   //	load_patch(0);
+#if TARGET_VST3 || TARGET_VST2 || TARGET_AUDIOUNIT 
+   // If we are in a daw hosted environment, choose a preset from the preset library
+   // Skip LV2 until we sort out the patch change dynamics there
+   int pid = 0;
+   for (auto p : storage.patch_list)
+   {
+      if (p.name == "Init Saw" && storage.patch_category[p.category].name == "Init")
+      {
+         // patchid_queue = pid;
+         // This is the wrong thing to do. I *think* what we need to do here is to
+         // explicitly load the file directly inline on thread using loadPatchFromFile
+         // and set up the location int rather than defer the load. But do that
+         // later
+         break;
+      }
+      pid++;
+   }
+#endif   
 }
 
 SurgeSynthesizer::~SurgeSynthesizer()
@@ -827,6 +858,7 @@ void SurgeSynthesizer::updateDisplay()
 #if ! TARGET_AUDIOUNIT
    getParent()->updateDisplay();
 #endif
+   refresh_editor = true;
 }
 
 void SurgeSynthesizer::sendParameterAutomation(long index, float value)
@@ -971,13 +1003,29 @@ void SurgeSynthesizer::channelController(char channel, int cc, int value)
          onRPN(channel, channelState[channel].rpn[0], channelState[channel].rpn[1],
                channelState[channel].rpn_v[0], channelState[channel].rpn_v[1]);
       }
+      return;
+
+   case 10:
+   {
+      if (mpeEnabled)
+      {
+         channelState[channel].pan = int7ToBipolarFloat(value);
+         return;
+      }
       break;
+   }
+
+   case 32:
+      CC32 = value;
+      return;
+
    case 38:
       if (channelState[channel].nrpn_last)
          channelState[channel].nrpn_v[0] = value;
       else
          channelState[channel].rpn_v[0] = value;
       break;
+
    case 64:
    {
       channelState[channel].hold = value > 63; // check hold pedal
@@ -1013,16 +1061,6 @@ void SurgeSynthesizer::channelController(char channel, int cc, int value)
       return;
    }
 
-   case 10:
-   {
-      if (mpeEnabled)
-      {
-         channelState[channel].pan = int7ToBipolarFloat(value);
-         return;
-      }
-      break;
-   }
-
    case 74:
    {
       if (mpeEnabled)
@@ -1049,6 +1087,9 @@ void SurgeSynthesizer::channelController(char channel, int cc, int value)
       channelState[channel].rpn[1] = value;
       channelState[channel].nrpn_last = false;
       return;
+   case 120: // all sound off
+   case 123: // all notes off
+      return;
    };
 
    int cc_encoded = cc;
@@ -1070,7 +1111,7 @@ void SurgeSynthesizer::channelController(char channel, int cc, int value)
       }
 
       fval = (float)tv / 16384.0f;
-      int cmode = channelState[channel].nrpn_last;
+      // int cmode = channelState[channel].nrpn_last;
    }
 
    for (int i = 0; i < n_customcontrollers; i++)
@@ -1156,7 +1197,6 @@ void SurgeSynthesizer::channelController(char channel, int cc, int value)
 
 void SurgeSynthesizer::purgeHoldbuffer(int scene)
 {
-   int z;
    std::list<std::pair<int,int>> retainBuffer;
    for( auto hp : holdbuffer[scene] )
    {
@@ -1573,6 +1613,25 @@ bool SurgeSynthesizer::loadFx(bool initp, bool force_reload_all)
             fx[s]->init_ctrltypes();
             if (initp)
                fx[s]->init_default_values();
+            else
+            {
+               for(int j=0; j<n_fx_params; j++)
+               {
+                  auto p = &( storage.getPatch().fx[s].p[j] );
+                  if( p->valtype == vt_float )
+                  {
+                     if( p->val.f < p->val_min.f )
+                     {
+                        p->val.f = p->val_min.f;
+                     }
+                     if( p->val.f > p->val_max.f )
+                     {
+                        p->val.f = p->val_max.f;
+                     }
+                  }
+               }
+
+            }
             /*for(int j=0; j<n_fx_params; j++)
             {
                 storage.getPatch().globaldata[storage.getPatch().fx[s].p[j].id].f =
@@ -1580,6 +1639,22 @@ bool SurgeSynthesizer::loadFx(bool initp, bool force_reload_all)
             }*/
 
             fx[s]->init();
+
+            /*
+            ** Clear modulation onto FX otherwise it hangs around from old ones, often with
+            ** disastrously bad meaning. #2036. But only do this if it is a one FX change
+            ** (not a patch load)
+            */
+            if( ! force_reload_all ) 
+               for(int j=0; j<n_fx_params; j++)
+               {
+                  auto p = &( storage.getPatch().fx[s].p[j] );
+                  for( int ms=1; ms<n_modsources; ms++ )
+                  {
+                     clearModulation(p->id, (modsources)ms, true );
+                  }
+               }
+            
          }
          something_changed = true;
          refresh_editor = true;
@@ -1678,9 +1753,15 @@ bool SurgeSynthesizer::isValidModulation(long ptag, modsources modsource)
       return false;
    if ((modsource == ms_keytrack) && (p == &storage.getPatch().scene[1].pitch))
       return false;
-   if ((p->ctrlgroup == cg_LFO) && (p->ctrlgroup_entry >= ms_lfo1) &&
-       !canModulateModulators(modsource))
+
+   /*
+     canModulateModulators is really a check at this point for "is amp or filter env" but
+     amp and filter env can modulate an VLFO so with 1.7 comment this out
+
+   if ((p->ctrlgroup == cg_LFO) && (p->ctrlgroup_entry >= ms_lfo1) && !canModulateModulators(modsource) )
       return false;
+   */
+
    if ((p->ctrlgroup == cg_LFO) && (p->ctrlgroup_entry == modsource))
       return false;
    if ((p->ctrlgroup == cg_LFO) && (p->ctrlgroup_entry >= ms_slfo1) && (!isScenelevel(modsource)))
@@ -1944,10 +2025,11 @@ void SurgeSynthesizer::clear_osc_modulation(int scene, int entry)
    storage.CS_ModRouting.leave();
 }
 
-void SurgeSynthesizer::clearModulation(long ptag, modsources modsource)
+void SurgeSynthesizer::clearModulation(long ptag, modsources modsource, bool clearEvenIfInvalid)
 {
-   if (!isValidModulation(ptag, modsource))
+   if (!isValidModulation(ptag, modsource) && ! clearEvenIfInvalid )
       return;
+   
    int scene = storage.getPatch().param_ptr[ptag]->scene;
 
    vector<ModulationRouting>* modlist;
@@ -2129,14 +2211,15 @@ void SurgeSynthesizer::getParameterName(long index, char* text)
 {
    if ((index >= 0) && (index < storage.getPatch().param_ptr.size()))
    {
-      // strncpy(text,storage.getPatch().param_ptr[index]->get_name(),32);
-      strncpy(text, storage.getPatch().param_ptr[index]->get_full_name(), 32);
-      // strncpy(text,storage.getPatch().param_ptr[index]->get_storage_name(),32);
+      int scn = storage.getPatch().param_ptr[index]->scene;
+      string sn[3] = {"", "A ", "B "};
+
+      sprintf(text, "%s%s", sn[scn].c_str(), storage.getPatch().param_ptr[index]->get_full_name());
    }
    else if (index >= metaparam_offset)
    {
       int c = index - metaparam_offset;
-      sprintf(text, "C%i:%s", c + 1, storage.getPatch().CustomControllerLabel[c]);
+      sprintf(text, "Macro %i: %s", c + 1, storage.getPatch().CustomControllerLabel[c]);
    }
    else
       sprintf(text, "-");
@@ -2146,8 +2229,14 @@ void SurgeSynthesizer::getParameterNameW(long index, wchar_t* ptr)
 {
    if ((index >= 0) && (index < storage.getPatch().param_ptr.size()))
    {
+      int scn = storage.getPatch().param_ptr[index]->scene;
+      char sn[3][3] = {"", "A ", "B "};
+      char pname[256];
+      
+      snprintf(pname, 255, "%s%s", sn[scn], storage.getPatch().param_ptr[index]->get_full_name());
+
       // the input is not wide so don't use %S
-      swprintf(ptr, 128, L"%s", storage.getPatch().param_ptr[index]->get_full_name());
+      swprintf(ptr, 128, L"%s", pname);
    }
    else if (index >= metaparam_offset)
    {
@@ -2158,11 +2247,11 @@ void SurgeSynthesizer::getParameterNameW(long index, wchar_t* ptr)
        
       if (c >= num_metaparameters)
       {
-         snprintf(wideHack, 255, "C:ERROR");
+         snprintf(wideHack, 255, "Macro: ERROR");
       }
       else
       {
-         snprintf(wideHack, 255, "C%d:%s", c+1, storage.getPatch().CustomControllerLabel[c]);
+         snprintf(wideHack, 255, "Macro %d: %s", c+1, storage.getPatch().CustomControllerLabel[c]);
       }
       swprintf(ptr, 128, L"%s", wideHack);
    }
@@ -2176,7 +2265,10 @@ void SurgeSynthesizer::getParameterShortNameW(long index, wchar_t* ptr)
 {
    if ((index >= 0) && (index < storage.getPatch().param_ptr.size()))
    {
-      swprintf(ptr, 128, L"%s", storage.getPatch().param_ptr[index]->get_name());
+      int scn = storage.getPatch().param_ptr[index]->scene;
+      string sn[3] = {"", "A ", "B "};
+
+      swprintf(ptr, 128, L"%s%s", sn[scn].c_str(), storage.getPatch().param_ptr[index]->get_name());
    }
    else if (index >= metaparam_offset)
    {
@@ -2556,7 +2648,6 @@ void SurgeSynthesizer::process()
       clear_block_antidenormalnoise(storage.audio_in_nonOS[1], BLOCK_SIZE_QUAD);
    }
 
-   float sceneout alignas(16)[2][2][BLOCK_SIZE_OS];
    float fxsendout alignas(16)[2][2][BLOCK_SIZE];
    bool play_scene[2];
 
@@ -2639,14 +2730,9 @@ void SurgeSynthesizer::process()
          else
             iter++;
       }
-   }
-   polydisplay = vcount;
 
-   // CS LEAVE
-   storage.CS_ModRouting.leave();
+      storage.CS_ModRouting.leave();
 
-   for (int s = 0; s < 2; s++)
-   {
       fbq_global g;
       g.FU1ptr = GetQFPtrFilterUnit(storage.getPatch().scene[s].filterunit[0].type.val.i,
                                     storage.getPatch().scene[s].filterunit[0].subtype.val.i);
@@ -2671,6 +2757,14 @@ void SurgeSynthesizer::process()
          ProcessQuadFB(FBQ[s][e >> 2], g, sceneout[s][0], sceneout[s][1]);
       }
 
+      if( s == 0 && storage.otherscene_clients > 0 )
+      {
+         // Make available for scene b 
+         copy_block(sceneout[0][0], storage.audio_otherscene[0], BLOCK_SIZE_OS_QUAD);
+         copy_block(sceneout[0][1], storage.audio_otherscene[1], BLOCK_SIZE_OS_QUAD);
+      }
+
+      
       iter = voices[s].begin();
       while (iter != voices[s].end())
       {
@@ -2679,7 +2773,12 @@ void SurgeSynthesizer::process()
          v->GetQFB(); // save filter state in voices after quad processing is done
          iter++;
       }
+      storage.CS_ModRouting.enter();
    }
+
+   // CS LEAVE
+   storage.CS_ModRouting.leave();
+   polydisplay = vcount;
 
    if (play_scene[0])
    {
@@ -2784,10 +2883,118 @@ void SurgeSynthesizer::process()
 
    hardclip_block8(output[0], BLOCK_SIZE_QUAD);
    hardclip_block8(output[1], BLOCK_SIZE_QUAD);
+
+   // since the sceneout is now routable we also need to mute and clip it
+   for( int s=0; s<2; ++s )
+   {
+      amp.multiply_2_blocks(sceneout[s][0], sceneout[s][1], BLOCK_SIZE_QUAD);
+      amp_mute.multiply_2_blocks(sceneout[s][0], sceneout[s][1], BLOCK_SIZE_QUAD);
+      hardclip_block8(sceneout[s][0], BLOCK_SIZE_QUAD);
+      hardclip_block8(sceneout[s][1], BLOCK_SIZE_QUAD);
+   }
 }
 
 PluginLayer* SurgeSynthesizer::getParent()
 {
    assert(_parent != nullptr);
    return _parent;
+}
+
+void SurgeSynthesizer::populateDawExtraState() {
+   storage.getPatch().dawExtraState.isPopulated = true;
+   storage.getPatch().dawExtraState.mpeEnabled = mpeEnabled;
+   storage.getPatch().dawExtraState.mpePitchBendRange = mpePitchBendRange;
+   
+   storage.getPatch().dawExtraState.hasTuning = !storage.isStandardTuning;
+   if( ! storage.isStandardTuning )
+      storage.getPatch().dawExtraState.tuningContents = storage.currentScale.rawText;
+   else
+      storage.getPatch().dawExtraState.tuningContents = "";
+   
+   storage.getPatch().dawExtraState.hasMapping = !storage.isStandardMapping;
+   if( ! storage.isStandardMapping )
+      storage.getPatch().dawExtraState.mappingContents = storage.currentMapping.rawText;
+   else
+      storage.getPatch().dawExtraState.mappingContents = "";
+
+   int n = n_global_params + n_scene_params; // only store midictrl's for scene A (scene A -> scene
+                                             // B will be duplicated on load)
+   for (int i = 0; i < n; i++)
+   {
+      if (storage.getPatch().param_ptr[i]->midictrl >= 0)
+      {
+         storage.getPatch().dawExtraState.midictrl_map[i] = storage.getPatch().param_ptr[i]->midictrl;
+      }
+   }
+
+   for (int i=0; i<n_customcontrollers; ++i )
+   {
+      storage.getPatch().dawExtraState.customcontrol_map[i] = storage.controllers[i];
+   }
+
+}
+
+void SurgeSynthesizer::loadFromDawExtraState() {
+   if( ! storage.getPatch().dawExtraState.isPopulated )
+      return;
+   mpeEnabled = storage.getPatch().dawExtraState.mpeEnabled;
+   if( storage.getPatch().dawExtraState.mpePitchBendRange > 0 )
+      mpePitchBendRange = storage.getPatch().dawExtraState.mpePitchBendRange;
+   
+   if( storage.getPatch().dawExtraState.hasTuning )
+   {
+      try {
+         auto sc = Tunings::parseSCLData(storage.getPatch().dawExtraState.tuningContents );
+         storage.retuneToScale(sc);
+      }
+      catch( Tunings::TuningError &e )
+      {
+         Surge::UserInteractions::promptError( e.what(), "Unable to restore tuning" );
+         storage.retuneToStandardTuning();
+      }
+   }
+   else
+   {
+      storage.retuneToStandardTuning();
+   }
+   
+   if( storage.getPatch().dawExtraState.hasMapping )
+   {
+      try
+      {
+         auto kb = Tunings::parseKBMData(storage.getPatch().dawExtraState.mappingContents );
+         storage.remapToKeyboard(kb);
+      }
+      catch( Tunings::TuningError &e )
+      {
+         Surge::UserInteractions::promptError( e.what(), "Unable to restore mapping" );
+         storage.retuneToStandardTuning();
+      }
+      
+   }
+   else
+   {
+      storage.remapToStandardKeyboard();
+   }
+
+   int n = n_global_params + n_scene_params; // only store midictrl's for scene A (scene A -> scene
+                                             // B will be duplicated on load)
+   for (int i = 0; i < n; i++)
+   {
+      if (storage.getPatch().dawExtraState.midictrl_map.find(i) != storage.getPatch().dawExtraState.midictrl_map.end() )
+      {
+         storage.getPatch().param_ptr[i]->midictrl =  storage.getPatch().dawExtraState.midictrl_map[i];
+         if( i >= n_global_params )
+         {
+            storage.getPatch().param_ptr[i + n_scene_params]->midictrl =  storage.getPatch().dawExtraState.midictrl_map[i];
+         }
+      }
+   }
+
+   for (int i=0; i<n_customcontrollers; ++i )
+   {
+      if( storage.getPatch().dawExtraState.customcontrol_map.find(i) != storage.getPatch().dawExtraState.midictrl_map.end() )
+         storage.controllers[i] = storage.getPatch().dawExtraState.customcontrol_map[i];
+   }
+
 }

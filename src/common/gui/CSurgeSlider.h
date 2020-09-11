@@ -1,6 +1,18 @@
-//-------------------------------------------------------------------------------------------------------
-//	Copyright 2005 Claes Johanson & Vember Audio
-//-------------------------------------------------------------------------------------------------------
+/*
+** Surge Synthesizer is Free and Open Source Software
+**
+** Surge is made available under the Gnu General Public License, v3.0
+** https://www.gnu.org/licenses/gpl-3.0.en.html
+**
+** Copyright 2004-2020 by various individuals as described by the Git transaction log
+**
+** All source at: https://github.com/surge-synthesizer/surge.git
+**
+** Surge was a commercial product from 2004-2018, with Copyright and ownership
+** in that period held by Claes Johanson at Vember Audio. Claes made Surge
+** open source in September 2018.
+*/
+
 #pragma once
 #include "vstcontrols.h"
 #include "SurgeBitmaps.h"
@@ -15,7 +27,8 @@ public:
                 VSTGUI::IControlListener* listener,
                 long tag,
                 bool is_mod,
-                std::shared_ptr<SurgeBitmaps> bitmapStore);
+                std::shared_ptr<SurgeBitmaps> bitmapStore,
+                SurgeStorage* storage = nullptr);
    ~CSurgeSlider();
    virtual void draw(VSTGUI::CDrawContext*) override;
    // virtual void mouse (VSTGUI::CDrawContext *pContext, VSTGUI::CPoint &where, long buttons = -1);
@@ -29,6 +42,9 @@ public:
    virtual VSTGUI::CMouseEventResult
    onMouseUp(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override; ///< called when a mouse up event occurs
 
+   virtual VSTGUI::CMouseEventResult
+   onMouseEntered(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override;
+   
    virtual VSTGUI::CMouseEventResult
    onMouseExited(VSTGUI::CPoint& where, const VSTGUI::CButtonState& buttons) override;
    
@@ -72,9 +88,16 @@ public:
 
    CLASS_METHODS(CSurgeSlider, CControl)
 
+   bool in_hover = false;
    bool is_mod;
-   bool disabled;
+   bool disabled; // means it can't be used unless something else changes
+   bool deactivated; // means it has been turned off by user action
    bool hasBeenDraggedDuringMouseGesture = false;
+   
+   bool isStepped = false;
+   int intRange = 0;
+   
+   SurgeStorage* storage = nullptr;
    
    enum MoveRateState
    {
@@ -85,10 +108,13 @@ public:
       kExact
    };
 
+   virtual void onSkinChanged() override;
+   
    static MoveRateState sliderMoveRateState;
 
 private:
-   VSTGUI::CBitmap *pHandle, *pTray, *pModHandle, *pTempoSyncHandle;
+   VSTGUI::CBitmap *pHandle = nullptr, *pTray = nullptr,
+      *pModHandle = nullptr, *pTempoSyncHandle = nullptr, *pHandleHover = nullptr;
    VSTGUI::CRect handle_rect, handle_rect_orig;
    VSTGUI::CPoint offsetHandle;
    int range;
@@ -105,6 +131,8 @@ private:
    VSTGUI::CPoint lastpoint, sourcepoint;
    float oldVal, *edit_value;
    int drawcount_debug;
+   
+   
 
    float restvalue, restmodval;
    bool wheelInitiatedEdit = false;

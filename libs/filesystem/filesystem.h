@@ -24,9 +24,10 @@
 #include <dirent.h>
 #include <fstream>
 
-namespace std::experimental::filesystem {
+namespace std { namespace experimental { namespace filesystem {
     class path {
     public:
+        static constexpr char preferred_separator = '/';
         std::string p;
         
         path();
@@ -88,7 +89,7 @@ namespace std::experimental::filesystem {
     void copy_recursive(const path& src, const path& target, const std::function<bool(path)>& predicate) noexcept;
 
     void copy_recursive(const path& src, const path& target) noexcept;
-}
+}}}
 
 #endif
 #else

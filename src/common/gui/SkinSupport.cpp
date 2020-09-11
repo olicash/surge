@@ -10,20 +10,10 @@
 #include "UIInstrumentation.h"
 #include "CScalableBitmap.h"
 
-#if LINUX
-#include <experimental/filesystem>
-#elif MAC || (WINDOWS && TARGET_RACK)
-#include <filesystem.h>
-#else
-#include <filesystem>
-#endif
+#include "ImportFilesystem.h"
 
 #include <iostream>
 #include <iomanip>
-
-#if !WINDOWS
-namespace fs = std::experimental::filesystem;
-#endif
 
 namespace Surge
 {
@@ -31,21 +21,20 @@ namespace UI
 {
 
 const std::string Skin::defaultImageIDPrefix = "DEFAULT/";
+std::ostringstream SkinDB::errorStream;
    
-SkinDB& Surge::UI::SkinDB::get(SurgeStorage* s)
+SkinDB& Surge::UI::SkinDB::get()
 {
-   static SkinDB instance(s);
+   static SkinDB instance;
    return instance;
 }
 
-SkinDB::SkinDB(SurgeStorage* s)
+SkinDB::SkinDB()
 {
 #ifdef INSTRUMENT_UI
    Surge::Debug::record( "SkinDB::SkinDB" );
 #endif   
-   std::cout << "Constructing SkinDB" << std::endl;
-   rescanForSkins(s);
-   this->storage = s;
+   // std::cout << "Constructing SkinDB" << std::endl;
 }
 
 SkinDB::~SkinDB()
@@ -55,11 +44,12 @@ SkinDB::~SkinDB()
 #endif   
    skins.clear(); // Not really necessary but means the skins are destroyed before the rest of the
                   // dtor runs
-   std::cout << "Destroying SkinDB" << std::endl;
+   // std::cout << "Destroying SkinDB" << std::endl;
 }
 
-std::shared_ptr<Skin> SkinDB::defaultSkin()
+std::shared_ptr<Skin> SkinDB::defaultSkin(SurgeStorage *storage)
 {
+   rescanForSkins(storage);
    auto uds = Surge::Storage::getUserDefaultValue( storage, "defaultSkin", "" );
    if( uds == "" )
       return getSkin(defaultSkinEntry);
@@ -165,9 +155,50 @@ void SkinDB::rescanForSkins(SurgeStorage* storage)
    }
    if( ! foundDefaultSkinEntry )
    {
-      Surge::UserInteractions::promptError( "Default skin not located. Surge is probably mis-installed",
+      std::ostringstream oss;
+      oss << "Surge Default Skin was not located. This usually means Surge is mis-installed or using an incompatible "
+          << "set of assets. Surge looked in '" << storage->datapath << "' and '" << storage->userDataPath << "'. "
+          << "You can fix this by re-installing or removing the offending incompatible resources.";
+      Surge::UserInteractions::promptError( oss.str(),
                                             "Skin Support Error" );
    }
+
+   // Run over the skins parsing the name
+   for( auto &e : availableSkins )
+   {
+      auto x = e.root + e.name + "/skin.xml";
+
+      TiXmlDocument doc;
+      // Obviously fix this
+      doc.SetTabSize(4);
+      
+      if (!doc.LoadFile(x) || doc.Error())
+      {
+         e.displayName = e.name + " (parse error)";
+         continue;
+      }
+      TiXmlElement* surgeskin = TINYXML_SAFE_TO_ELEMENT(doc.FirstChild("surge-skin"));
+      if (!surgeskin)
+      {
+         e.displayName = e.name + " (no skin element)";
+         continue;
+      }
+
+      const char* a;
+      if( ( a = surgeskin->Attribute("name") ) )
+      {
+         e.displayName = a;
+      }
+      else
+      {
+         e.displayName = e.name + " (no name att)";
+      }
+   }
+
+   std::sort( availableSkins.begin(), availableSkins.end(),
+              [](const SkinDB::Entry &a, const SkinDB::Entry &b) {
+                 return _stricmp( a.displayName.c_str(), b.displayName.c_str() ) < 0;
+              } );
 }
 
 // see scripts/misc/idmap.pl if you want to regen this
@@ -233,7 +264,7 @@ Skin::Skin(std::string root, std::string name) : root(root), name(name)
    Surge::Debug::record( "Skin::Skin" );
 #endif   
    instances++;
-   std::cout << "Constructing a skin " << _D(root) << _D(name) << _D(instances) << std::endl;
+   // std::cout << "Constructing a skin " << _D(root) << _D(name) << _D(instances) << std::endl;
    imageIds = createIdNameMap();
 }
 
@@ -243,20 +274,20 @@ Skin::~Skin()
    Surge::Debug::record( "Skin::~Skin" );
 #endif   
    instances--;
-   std::cout << "Destroying a skin " << _D(instances) << std::endl;
+   // std::cout << "Destroying a skin " << _D(instances) << std::endl;
 }
 
 #if !defined(TINYXML_SAFE_TO_ELEMENT)
 #define TINYXML_SAFE_TO_ELEMENT(expr) ((expr) ? (expr)->ToElement() : NULL)
 #endif
 
-void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
+bool Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
 {
 #ifdef INSTRUMENT_UI
    Surge::Debug::record( "Skin::reloadSkin" );
    Surge::Debug::TimeThisBlock _trs_( "Skin::reloadSkin" );
 #endif   
-   std::cout << "Reloading skin " << _D(name) << std::endl;
+   // std::cout << "Reloading skin " << _D(name) << std::endl;
    TiXmlDocument doc;
    // Obviously fix this
    doc.SetTabSize(4);
@@ -268,13 +299,14 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
       FIXMEERROR << "Unable to parse bskin.xml\nError is:\n"
                  << doc.ErrorDesc() << " at row=" << doc.ErrorRow() << " col=" << doc.ErrorCol()
                  << std::endl;
+      return false;
    }
 
    TiXmlElement* surgeskin = TINYXML_SAFE_TO_ELEMENT(doc.FirstChild("surge-skin"));
    if (!surgeskin)
    {
       FIXMEERROR << "There is no top level suge-skin node in skin.xml" << std::endl;
-      return;
+      return true;
    }
    const char* a;
    displayName = name;
@@ -287,20 +319,36 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
    if ( ( a = surgeskin->Attribute("authorURL") ) )
       authorURL = a;
 
+   int version = -1;
+   if( ! ( surgeskin->QueryIntAttribute( "version", &version ) == TIXML_SUCCESS ) )
+   {
+      FIXMEERROR << "Skin file does not contain a 'version' attribute. You must contain a version at most " << Skin::current_format_version << std::endl;
+      return false;
+   }
+   if( version > Skin::current_format_version )
+   {
+      FIXMEERROR << "Skin version '" << version << "' is greater than the max version '"
+                 << Skin::current_format_version << "' supported by this binary" << std::endl;
+      return false;
+   }
+   
    auto globalsxml = TINYXML_SAFE_TO_ELEMENT(surgeskin->FirstChild("globals"));
    auto componentclassesxml = TINYXML_SAFE_TO_ELEMENT(surgeskin->FirstChild("component-classes"));
    auto controlsxml = TINYXML_SAFE_TO_ELEMENT(surgeskin->FirstChild("controls"));
    if (!globalsxml)
    {
       FIXMEERROR << "surge-skin contains no globals element" << std::endl;
+      return false;
    }
    if(!componentclassesxml)
    {
       FIXMEERROR << "surge-skin contains no component-classes element" << std::endl;
+      return false;
    }
    if (!controlsxml)
    {
       FIXMEERROR << "surge-skin contains no controls element" << std::endl;
+      return false;
    }
 
    /*
@@ -339,7 +387,13 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
 
    controls.clear();
    rootControl = std::make_shared<ControlGroup>();
-   recursiveGroupParse( rootControl, controlsxml );
+   bool rgp = recursiveGroupParse( rootControl, controlsxml );
+   if( ! rgp )
+   {
+      FIXMEERROR << "Recursive Group Parse failed" << std::endl;
+      return false;
+   }
+    
 
    componentClasses.clear();
    for (auto gchild = componentclassesxml->FirstChild(); gchild; gchild = gchild->NextSibling())
@@ -360,11 +414,13 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
       if( c->name == "" )
       {
          FIXMEERROR << "INVALUD NAME" << std::endl;
+         return false;
       }
 
       if( componentClasses.find( c->name ) != componentClasses.end() )
       {
          FIXMEERROR << "Double Definition" << std::endl;
+         return false;
       }
       
       for (auto a = lkid->FirstAttribute(); a; a = a->Next())
@@ -469,14 +525,15 @@ void Skin::reloadSkin(std::shared_ptr<SurgeBitmaps> bitmapStore)
          else
          {
             FIXMEERROR << "PARENT CLASS DOESN'T RESOLVE FOR " << c->ultimateparentclassname << std::endl;
+            return false;
             break;
          }
       }
    }
-  
+   return true;
 }
 
-void Skin::recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *controlsxml, std::string pfx )
+bool Skin::recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *controlsxml, std::string pfx )
 {
    // I know I am gross for copying these
    auto attrint = [](TiXmlElement* e, const char* a) {
@@ -509,9 +566,12 @@ void Skin::recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *contro
          g->h = attrint( lkid, "h" );
          
          parent->childGroups.push_back(g);
-         recursiveGroupParse( g, lkid, pfx + "|--"  );
+         if (! recursiveGroupParse( g, lkid, pfx + "|--"  ) )
+         {
+            return false;
+         }
       }
-      else if (std::string(lkid->Value()) == "control")
+      else if ( (std::string(lkid->Value()) == "control") || (std::string(lkid->Value()) == "label" ))
       {
          auto c = std::make_shared<Skin::Control>();
          c->x = attrint(lkid, "x") + parent->x;
@@ -520,7 +580,11 @@ void Skin::recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *contro
          c->h = attrint(lkid, "h");
 
          c->classname  = attrstr(lkid, "class" );
-         if( lkid->Attribute( "tag_value" ) )
+         if( std::string( lkid->Value() ) == "label" )
+         {
+            c->type = Control::Type::LABEL;
+         }
+         else if( lkid->Attribute( "tag_value" ) )
          {
             c->type = Control::Type::ENUM;
             c->enum_id = attrint( lkid, "tag_value" );
@@ -541,18 +605,23 @@ void Skin::recursiveGroupParse( ControlGroup::ptr_t parent, TiXmlElement *contro
       else
       {
          FIXMEERROR << "INVALID CONTROL" << std::endl;
+         return false;
       }
    }
-
+   return true;
 }
 
 bool Skin::hasColor(std::string id)
 {
+   if( id[0] == '$' ) // when used as a value in a control you can have the $ or not, even though internally we strip it
+      id = std::string( id.c_str() + 1 );
    queried_colors.insert(id);
    return colors.find(id) != colors.end();
 }
 VSTGUI::CColor Skin::getColor(std::string id, const VSTGUI::CColor& def, std::unordered_set<std::string> noLoops)
 {
+   if( id[0] == '$' )
+      id = std::string( id.c_str() + 1 );
    if( noLoops.find( id ) != noLoops.end() )
    {
       std::ostringstream oss;
@@ -609,7 +678,7 @@ CScalableBitmap *Skin::hoverBitmapOverlayForBackgroundBitmap( Skin::Control::ptr
    }
    if( c.get() )
    {
-      std::cout << "should ask control if it has an opinoin" << std::endl;
+      std::cout << "TODO: The component may have a name for a hover asset type=" << t << " component=" << c->toString() << std::endl;
    }
    if( ! b )
    {
