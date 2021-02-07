@@ -17,16 +17,21 @@
 
 struct SurgeVoiceState
 {
-   bool gate;
-   bool keep_playing, uberrelease;
-   float pitch, fvel, pkey, priorpkey, detune, freleasevel;
-   MidiKeyState* keyState;
-   MidiChannelState* mainChannelState;
-   MidiChannelState* voiceChannelState;
-   int key, velocity, channel, scene_id, releasevelocity;
-   float portasrc_key, portaphase;
-   struct MTSClient* mtsclient;
-   bool porta_doretrigger;
+    bool gate;
+    bool keep_playing, uberrelease;
+    float pitch, scenepbpitch, fvel, pkey, priorpkey, detune, freleasevel;
+    MidiKeyState *keyState;
+    MidiChannelState *mainChannelState;
+    MidiChannelState *voiceChannelState;
+    int key, velocity, channel, scene_id, releasevelocity;
+    float portasrc_key, portaphase;
+	struct MTSClient* mtsclient;
+    bool porta_doretrigger;
 
-   float getPitch();
+    // note that this does not replace the regular pitch bend modulator, only used to smooth MPE
+    // pitch
+    ControllerModulationSource mpePitchBend;
+    float mpePitchBendRange;
+
+    float getPitch();
 };

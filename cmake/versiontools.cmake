@@ -1,7 +1,24 @@
 
 find_package(Git)
 
-if( Git_FOUND )
+if( EXISTS ${SURGESRC}/VERSION_GIT_INFO )
+  message( STATUS "VERSION_GIT_INFO file is present; using that rather than git query" )
+  # Line 2 is the branch, line 3 is the hash
+  execute_process(
+    COMMAND sed -n "2p" ${SURGESRC}/VERSION_GIT_INFO
+    WORKING_DIRECTORY ${SURGESRC}
+    OUTPUT_VARIABLE GIT_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+  execute_process(
+    COMMAND sed -n "3p" ${SURGESRC}/VERSION_GIT_INFO
+    WORKING_DIRECTORY ${SURGESRC}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+elseif( Git_FOUND )
   execute_process(
     COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
     WORKING_DIRECTORY ${SURGESRC}
@@ -10,19 +27,24 @@ if( Git_FOUND )
     )
 
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} log -1 --format=%h
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
     WORKING_DIRECTORY ${SURGESRC}
     OUTPUT_VARIABLE GIT_COMMIT_HASH
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-else()
-  message( WARNING "Git isn't present in your path. Setting hashes to defaults" )
-  set( GIT_BRANCH "git-not-present" )
-  set( GIT_COMMIT_HASH "git-not-present" )
+endif()
+
+if("${GIT_BRANCH}" STREQUAL "")
+  message(WARNING "Could not determine Git branch, using placeholder.")
+  set(GIT_BRANCH "git-no-branch")
+endif()
+if ("${GIT_COMMIT_HASH}" STREQUAL "")
+  message(WARNING "Could not determine Git commit hash, using placeholder.")
+  set(GIT_COMMIT_HASH "git-no-commit")
 endif()
 
 if( WIN32 )
-  set( SURGE_BUILD_ARCH "Intel" )
+  set( SURGE_BUILD_ARCH "x86" )
 else()
   execute_process(
     COMMAND uname -m
@@ -85,6 +107,7 @@ set( SURGE_BUILD_HASH "${GIT_COMMIT_HASH}" )
 set( SURGE_BUILD_LOCATION "${lpipeline}" )
 
 string( TIMESTAMP SURGE_BUILD_DATE "%Y-%m-%d" )
+string( TIMESTAMP SURGE_BUILD_YEAR "%Y" )
 string( TIMESTAMP SURGE_BUILD_TIME "%H:%M:%S" )
 
 message( STATUS "Using SURGE_VERSION=${SURGE_FULL_VERSION}" )

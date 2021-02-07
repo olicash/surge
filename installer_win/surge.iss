@@ -30,9 +30,11 @@ DefaultDirName={cf}\VST3\Surge Synth Team\
 DefaultGroupName=Surge
 DisableProgramGroupPage=yes
 DisableDirPage=yes
+DisableReadyPage=no
 LicenseFile=..\LICENSE
 OutputBaseFilename="{#MyAppName}-{#MyAppVersion}-Setup"
 SetupIconFile=surge.ico
+UninstallDisplayIcon=surge.ico
 UsePreviousAppDir=yes
 Compression=lzma
 SolidCompression=yes
@@ -44,9 +46,16 @@ Type: filesandordirs; Name: "{cf}\VST3\SurgeEffectsBank.vst3"
 Type: filesandordirs; Name: "{cf}\VST3\Surge Synth Team\SurgeEffectsBank.vst3"
 ;; also since we're now putting the .vst3 file in SST subfolder, remove old one
 Type: files; Name: "{cf}\VST3\Surge.vst3"
-;; and since there have been changes in patch subfoldering for factory and 3rd party folders in Surge 1.7, delete them first to ensure clean slate
+;; clean up factory data folder, except tuning-library folder (users might link to their own custom tunings into this folder)
+Type: filesandordirs; Name: "{commonappdata}\Surge\modulator_presets"
 Type: filesandordirs; Name: "{commonappdata}\Surge\patches_3rdparty"
 Type: filesandordirs; Name: "{commonappdata}\Surge\patches_factory"
+Type: filesandordirs; Name: "{commonappdata}\Surge\skins"
+Type: filesandordirs; Name: "{commonappdata}\Surge\wavetables"
+Type: filesandordirs; Name: "{commonappdata}\Surge\wavetables_3rdparty"
+Type: files; Name: "{commonappdata}\Surge\windows.wt"
+Type: files; Name: "{commonappdata}\Surge\configuration.xml"
+Type: files; Name: "{commonappdata}\Surge\paramdocumentation.xml"
 
 [Components]
 Name: Data; Description: Data Files; Types: full compact custom; Flags: fixed
@@ -57,7 +66,7 @@ Name: EffectsVST3; Description: SurgeEffectsBank VST3 (64-bit); Types: full comp
 Source: ..\resources\data\*; DestDir: {commonappdata}\Surge; Components: Data; Flags: recursesubdirs; Excludes: "*.git";
 Source: ..\resources\fonts\Lato-Regular.ttf; DestDir: "{fonts}"; Components: Data; FontInstall: "Lato"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: ..\build\surge_products\Surge.vst3; DestDir: {cf}\VST3\Surge Synth Team\; Components: VST3; Flags: ignoreversion
-Source: ..\surge-fx\build\product\SurgeEffectsBank.vst3; DestDir: {cf}\VST3\Surge Synth Team\; Components: EffectsVST3; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs
+Source: ..\build\surge_products\SurgeEffectsBank.vst3; DestDir: {cf}\VST3\Surge Synth Team\; Components: EffectsVST3; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -70,3 +79,23 @@ Filename: "{cmd}"; \
     WorkingDir: "{cf}\VST3"; \
     Parameters: "/C mklink /D /J  ""{cf}\VST3\Surge Synth Team\SurgeData"" ""{commonappdata}\Surge"""; \
     Flags: runascurrentuser
+
+[Code]
+procedure AddToReadyMemo(var Memo: string; Info, NewLine: string);
+begin
+  if Info <> '' then Memo := Memo + Info + Newline + NewLine;
+end;
+
+function UpdateReadyMemo(
+  Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo,
+  MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  AddToReadyMemo(Result, MemoComponentsInfo, NewLine);
+
+  Result := Result + 'Installation Locations:' + NewLine
+  Result := Result + Space + 'Data Files: ' + ExpandConstant( '{commonappdata}' ) + '\Surge' + NewLine
+  Result := Result + Space + 'VST3: ' + ExpandConstant( '{cf}' ) + '\VST3\Surge Synth Team' + NewLine
+  Result := Result + Space + 'Portable Junction: ' + ExpandConstant( '{cf}' ) + '\VST3\Surge Synth Team\SurgeData' + NewLine
+  
+end;
+

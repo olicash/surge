@@ -79,11 +79,22 @@ cmake-stamp
 build/
 build32/
 buildlin/
+buildlin-*/
 buildmac/
 buildwin/
 build-arm/
+buildiwyu/
+cmake-build-*/
+bwd/
 
 # Reaper
 *.RPP-bak
 
 surge-fx
+VERSION_GIT_INFO
+
+# Juce until we add a submodule
+libs/juce-*
+
+# A place for BP to store stuff
+ignore/*
