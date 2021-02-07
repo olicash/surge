@@ -19,7 +19,6 @@
 #include "effect/Effect.h"
 #include "BiquadFilter.h"
 #include "UserInteractions.h"
-#include "libMTSClient.h"
 
 struct QuadFilterChainState;
 
@@ -410,8 +409,6 @@ class alignas(16) SurgeSynthesizer
     void setupActivateExtraOutputs();
 
     void changeModulatorSmoothing(ControllerModulationSource::SmoothingMode m);
-
-	MTSClient *mtsclient;
 	
     // these have to be thread-safe, so keep private
   private:

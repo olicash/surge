@@ -5075,6 +5075,7 @@ void SurgeGUIEditor::toggleTuning()
 
     this->synth->refresh_editor = true;
 }
+
 void SurgeGUIEditor::showTuningMenu(VSTGUI::CPoint &where)
 {
     CRect menuRect;
@@ -5722,7 +5723,7 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeTuningMenu(VSTGUI::CRect &menuRect, boo
                 this->synth->storage.setTuningApplicationMode(SurgeStorage::RETUNE_ALL);
             }
         });
-    if (this->synth->storage.isStandardTuning)
+    if (this->synth->storage.isStandardTuning && !MTS_HasMaster(this->synth->storage.mtsclient))
     {
         mod->setEnabled(false);
     }

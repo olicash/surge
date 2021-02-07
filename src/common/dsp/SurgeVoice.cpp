@@ -56,10 +56,10 @@ float SurgeVoiceState::getPitch(SurgeStorage *storage)
     }
     else
     {
-    	if (storage->isStandardTuning && MTS_HasMaster(mtsclient) && 
+    	if (storage->isStandardTuning && MTS_HasMaster(storage->mtsclient) &&
     		storage->tuningApplicationMode == SurgeStorage::RETUNE_MIDI_ONLY)
     	{
-    		res += MTS_RetuningInSemitones(mtsclient,key,channel);
+    		res += MTS_RetuningInSemitones(storage->mtsclient,key,channel);
     	}
         return res;
     }
@@ -70,7 +70,7 @@ SurgeVoice::SurgeVoice() {}
 SurgeVoice::SurgeVoice(SurgeStorage *storage, SurgeSceneStorage *oscene, pdata *params, int key,
                        int velocity, int channel, int scene_id, float detune,
                        MidiKeyState *keyState, MidiChannelState *mainChannelState,
-                       MidiChannelState *voiceChannelState, bool mpeEnabled, int64_t voiceOrder, MTSClient* mtsclient)
+                       MidiChannelState *voiceChannelState, bool mpeEnabled, int64_t voiceOrder)
 //: fb(storage,oscene)
 {
     // assign pointers
@@ -103,7 +103,6 @@ SurgeVoice::SurgeVoice(SurgeStorage *storage, SurgeSceneStorage *oscene, pdata *
     state.keyState = keyState;
     state.mainChannelState = mainChannelState;
     state.voiceChannelState = voiceChannelState;
-    state.mtsclient=mtsclient;
     state.mpePitchBendRange = storage->mpePitchBendRange;
     state.mpePitchBend = ControllerModulationSource(storage->pitchSmoothingMode);
     state.mpePitchBend.init(voiceChannelState->pitchBend / 8192.f);
@@ -622,6 +621,10 @@ template <bool first> void SurgeVoice::calc_ctrldata(QuadFilterChainState *Q, in
     octaveSize = 12.0f;
     if (!storage->isStandardTuning && storage->tuningApplicationMode == SurgeStorage::RETUNE_ALL)
         octaveSize = storage->currentScale.count;
+    
+    if (storage->isStandardTuning && MTS_HasMaster(storage->mtsclient) &&
+        storage->tuningApplicationMode == SurgeStorage::RETUNE_ALL)
+        octaveSize = MTS_GetMapSize(storage->mtsclient);
 
     state.scenepbpitch = pb + localcopy[pitch_id].f * (scene->pitch.extend_range ? 12.f : 1.f) +
                          (octaveSize * localcopy[octave_id].i);

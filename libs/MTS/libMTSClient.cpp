@@ -8,7 +8,8 @@
 #include <dlfcn.h>
 #endif
 
-const static double ratioToSemitones=12./log(2.);
+const static double ln2=0.693147180559945309417;
+const static double ratioToSemitones=17.31234049066756088832;   // 12./log(2.)
 typedef void (*mts_pv)(void*);
 typedef bool (*mts_bool)(void);
 typedef bool (*mts_bcc)(char,char);
@@ -16,20 +17,22 @@ typedef const double *(*mts_cd)(void);
 typedef const double *(*mts_cdc)(char);
 typedef bool (*mts_bc)(char);
 typedef const char *(*mts_pcc)(void);
+typedef double (*mts_d)(void);
+typedef char (*mts_char)(void);
 
 struct mtsclientglobal
 {
-    mtsclientglobal() : RegisterClient(0), DeregisterClient(0), HasMaster(0), ShouldFilterNote(0), ShouldFilterNoteMultiChannel(0), GetTuning(0), GetMultiChannelTuning(0), UseMultiChannelTuning(0), GetScaleName(0), esp_retuning(0)
+    mtsclientglobal() : RegisterClient(0), DeregisterClient(0), HasMaster(0), ShouldFilterNote(0), ShouldFilterNoteMultiChannel(0), GetTuning(0), GetMultiChannelTuning(0), UseMultiChannelTuning(0), GetScaleName(0), GetPeriodRatio(0), GetMapSize(0), GetMapStartKey(0), GetRefKey(0), esp_retuning(0)
     {
-        for (int i=0;i<128;i++) iet[i]=1./(440.*pow(2.,(i-69.)/12.));
+        for (int i=0;i<512;i++) iet[i]=1./(440.*pow(2.,(i-325.)/12.));
         load_lib();
         if (GetTuning) esp_retuning=GetTuning();
         for (int i=0;i<16;i++) multi_channel_esp_retuning[i]=GetMultiChannelTuning?GetMultiChannelTuning(i):0;
     }
     virtual inline bool isOnline() const {return esp_retuning && HasMaster && HasMaster();}
     
-    mts_pv RegisterClient,DeregisterClient;mts_bool HasMaster;mts_bcc ShouldFilterNote,ShouldFilterNoteMultiChannel;mts_cd GetTuning;mts_cdc GetMultiChannelTuning;mts_bc UseMultiChannelTuning;mts_pcc GetScaleName;    // Interface to lib
-    double iet[128];const double *esp_retuning;const double *multi_channel_esp_retuning[16];    // tuning tables
+    mts_pv RegisterClient,DeregisterClient;mts_bool HasMaster;mts_bcc ShouldFilterNote,ShouldFilterNoteMultiChannel;mts_cd GetTuning;mts_cdc GetMultiChannelTuning;mts_bc UseMultiChannelTuning;mts_pcc GetScaleName;mts_d GetPeriodRatio;mts_char GetMapSize,GetMapStartKey,GetRefKey;    // Interface to lib
+    double iet[512];const double *esp_retuning;const double *multi_channel_esp_retuning[16];    // tuning tables
     
 #ifdef _WIN32
     virtual void load_lib()
@@ -38,7 +41,7 @@ struct mtsclientglobal
 		const TCHAR *libpath=TEXT("\\LIBMTS.dll");
 		GetSystemDirectory(buffer,MAX_PATH);
         _tcscat(buffer,libpath);
-		if (!(handle=LoadLibraryA(buffer))) return;
+		if (!(handle=LoadLibrary(buffer))) return;
         RegisterClient                  =(mts_pv)   GetProcAddress(handle,"MTS_RegisterClient");
         DeregisterClient                =(mts_pv)   GetProcAddress(handle,"MTS_DeregisterClient");
         HasMaster                       =(mts_bool) GetProcAddress(handle,"MTS_HasMaster");
@@ -48,12 +51,18 @@ struct mtsclientglobal
         GetMultiChannelTuning           =(mts_cdc)  GetProcAddress(handle,"MTS_GetMultiChannelTuningTable");
         UseMultiChannelTuning           =(mts_bc)   GetProcAddress(handle,"MTS_UseMultiChannelTuning");
         GetScaleName                    =(mts_pcc)  GetProcAddress(handle,"MTS_GetScaleName");
+        GetPeriodRatio                  =(mts_d)    GetProcAddress(handle,"MTS_GetPeriodRatio");
+        GetMapSize                      =(mts_char) GetProcAddress(handle,"MTS_GetMapSize");
+        GetMapStartKey                  =(mts_char) GetProcAddress(handle,"MTS_GetMapStartKey");
+        GetRefKey                       =(mts_char) GetProcAddress(handle,"MTS_GetRefKey");
     }
     virtual ~mtsclientglobal() {FreeLibrary(handle);}
     HINSTANCE handle;
 #else
-    virtual void load_lib(){
-        if (!(handle=dlopen("/Library/Application Support/MTS-ESP/libMTS.dylib",RTLD_NOW))) return;
+    virtual void load_lib()
+    {
+        if (!(handle=dlopen("/Library/Application Support/MTS-ESP/libMTS.dylib",RTLD_NOW)) &&
+            !(handle=dlopen("/usr/local/lib/libMTS.dylib",RTLD_NOW))) return;
         RegisterClient                  =(mts_pv)   dlsym(handle,"MTS_RegisterClient");
         DeregisterClient                =(mts_pv)   dlsym(handle,"MTS_DeregisterClient");
         HasMaster                       =(mts_bool) dlsym(handle,"MTS_HasMaster");
@@ -63,6 +72,10 @@ struct mtsclientglobal
         GetMultiChannelTuning           =(mts_cdc)  dlsym(handle,"MTS_GetMultiChannelTuningTable");
         UseMultiChannelTuning           =(mts_bc)   dlsym(handle,"MTS_UseMultiChannelTuning");
         GetScaleName                    =(mts_pcc)  dlsym(handle,"MTS_GetScaleName");
+        GetPeriodRatio                  =(mts_d)    dlsym(handle,"MTS_GetPeriodRatio");
+        GetMapSize                      =(mts_char) dlsym(handle,"MTS_GetMapSize");
+        GetMapStartKey                  =(mts_char) dlsym(handle,"MTS_GetMapStartKey");
+        GetRefKey                       =(mts_char) dlsym(handle,"MTS_GetRefKey");
     }
     virtual ~mtsclientglobal() {dlclose(handle);}
     void *handle;
@@ -73,36 +86,64 @@ static mtsclientglobal global;
 
 struct MTSClient
 {
-    MTSClient() : supportsMultiChannelNoteFiltering(false), supportsMultiChannelTuning(false), freqRequestReceived(false), tuningName("12-TET")
+    MTSClient() : tuningName("12-TET"), supportsMultiChannelNoteFiltering(false), supportsMultiChannelTuning(false), freqRequestReceived(false)
     {
         for (int i=0;i<128;i++) retuning[i]=440.*pow(2.,(i-69.)/12.);
         if (global.RegisterClient) global.RegisterClient((void*)this);
     }
     ~MTSClient() {if (global.DeregisterClient) global.DeregisterClient((void*)this);}
     bool hasMaster() {return global.isOnline();}
-    inline double freq(char midinote,char midichannel)
+    inline double freq(int midinote,char midichannel)
     {
         freqRequestReceived=true;
         supportsMultiChannelTuning=!(midichannel&~15);
+        double m=1.;
+        if (midinote&~127)
+        {
+            char mapSize=GetMapSize();
+            int n=(midinote>127) ? (midinote-127)/mapSize+1 : midinote/mapSize-1;
+            m=pow(GetPeriodRatio(),n)*global.iet[(midinote+256)&511];
+            midinote-=n*mapSize;
+        }
         if (global.isOnline())
         {
-            if (supportsMultiChannelNoteFiltering && supportsMultiChannelTuning && global.UseMultiChannelTuning && global.UseMultiChannelTuning(midichannel) && global.multi_channel_esp_retuning[midichannel])
+            if (supportsMultiChannelNoteFiltering && supportsMultiChannelTuning && global.UseMultiChannelTuning && global.UseMultiChannelTuning(midichannel) && global.multi_channel_esp_retuning[midichannel&15])
             {
-                return global.multi_channel_esp_retuning[midichannel][midinote&127];
+                return global.multi_channel_esp_retuning[midichannel&15][midinote&127]*m;
             }
-            else return global.esp_retuning[midinote&127];
+            else return global.esp_retuning[midinote&127]*m;
         }
-        return retuning[midinote&127];
+        return retuning[midinote&127]*m;
     }
     inline bool shouldFilterNote(char midinote,char midichannel)
     {
         supportsMultiChannelNoteFiltering=!(midichannel&~15);
         if (!freqRequestReceived) supportsMultiChannelTuning=supportsMultiChannelNoteFiltering;    // assume it supports multi channel tuning until we receive a request for a frequency and can verify
+        if (!global.isOnline()) return false;
         if (supportsMultiChannelNoteFiltering && supportsMultiChannelTuning && global.UseMultiChannelTuning && global.UseMultiChannelTuning(midichannel))
         {
             return global.ShouldFilterNoteMultiChannel?global.ShouldFilterNoteMultiChannel(midinote&127,midichannel):false;
         }
         return global.ShouldFilterNote?global.ShouldFilterNote(midinote&127,midichannel):false;
+    }
+    inline char freqToNote(double freq,char midichannel)
+    {
+        bool online=global.isOnline();
+        const double *freqs=online?global.esp_retuning:retuning;
+        unsigned char iLower,iUpper;iLower=0;iUpper=0;
+        double dLower,dUpper;dLower=0;dUpper=0;
+        for (int i=0;i<128;i++)
+        {
+            if (online && global.ShouldFilterNote && global.ShouldFilterNote(i,midichannel)) continue;
+            double d=freqs[i]-freq;
+            if (!d) return i;
+            if (d<0) {if (!dLower || d>dLower) {dLower=d;iLower=i;}}
+            else if (!dUpper || d<dUpper) {dUpper=d;iUpper=i;}
+        }
+        if (!dLower) return iUpper;
+        if (!dUpper || iLower==iUpper) return iLower;
+        double fmid=freqs[iLower]*pow(2.,0.5*(log(freqs[iUpper]/freqs[iLower])/ln2));
+        return freq<fmid?iLower:iUpper;
     }
     inline void parseMIDIData(const unsigned char *buffer,int len)
     {
@@ -121,7 +162,7 @@ struct MTSClient
                 case eMatchingSysex:
                     sysex_ctr=0;
                     if (b==0x7E) state=eSysexValid;
-                    else if (b==0x7F) realtime=true,state=eSysexValid;
+                    else if (b==0x7F) {realtime=true;state=eSysexValid;}
                     else state=eMatchingSysex;   // don't switch to ignoring...Scala adds two bytes here, we need to skip over them
                     break;
                 case eSysexValid:
@@ -136,16 +177,16 @@ struct MTSClient
                     sysex_ctr=0;
                     switch (b)
                     {
-                        case 0: format=eRequest,state=eMatchingProg; break;
-                        case 1: format=eBulk,state=eMatchingProg; break;
-                        case 2: format=eSingle,state=eMatchingProg; break;
-                        case 3: format=eRequest,state=eMatchingBank; break;
-                        case 4: format=eBulk,state=eMatchingBank; break;
-                        case 5: format=eScaleOctOneByte,state=eMatchingBank; break;
-                        case 6: format=eScaleOctTwoByte,state=eMatchingBank; break;
-                        case 7: format=eSingle,state=eMatchingBank; break;
-                        case 8: format=eScaleOctOneByteExt,state=eMatchingChannel; break;
-                        case 9: format=eScaleOctTwoByteExt,state=eMatchingChannel; break;
+                        case 0: format=eRequest;state=eMatchingProg; break;
+                        case 1: format=eBulk;state=eMatchingProg; break;
+                        case 2: format=eSingle;state=eMatchingProg; break;
+                        case 3: format=eRequest;state=eMatchingBank; break;
+                        case 4: format=eBulk;state=eMatchingBank; break;
+                        case 5: format=eScaleOctOneByte;state=eMatchingBank; break;
+                        case 6: format=eScaleOctTwoByte;state=eMatchingBank; break;
+                        case 7: format=eSingle;state=eMatchingBank; break;
+                        case 8: format=eScaleOctOneByteExt;state=eMatchingChannel; break;
+                        case 9: format=eScaleOctTwoByteExt;state=eMatchingChannel; break;
                         default: state=eIgnoring; break;    // it's not a valid MTS format
                     }
                     break;
@@ -155,21 +196,21 @@ struct MTSClient
                     break;
                 case eMatchingProg:
                     prog=b;
-                    if (format==eSingle) state=eNumTunings;else state=eTuningName,tuningName[0]='\0';
+                    if (format==eSingle) state=eNumTunings;else {state=eTuningName;tuningName[0]='\0';}
                     break;
                 case eTuningName:
                     tuningName[sysex_ctr]=b;
-                    if (++sysex_ctr>=16) tuningName[16]='\0',sysex_ctr=0,state=eTuningData;
+                    if (++sysex_ctr>=16) {tuningName[16]='\0';sysex_ctr=0;state=eTuningData;}
                     break;
                 case eNumTunings:
-                    numTunings=b,sysex_ctr=0,state=eTuningData;
+                    numTunings=b;sysex_ctr=0;state=eTuningData;
                     break;
                 case eMatchingChannel:
                     switch (sysex_ctr++)
                     {
                         case 0: for (int i=14;i<16;i++) channelBitmap|=(1<<i); break;
                         case 1: for (int i=7;i<14;i++) channelBitmap|=(1<<i); break;
-                        case 2: for (int i=0;i<7;i++) channelBitmap|=(1<<i); sysex_ctr=0,state=eTuningData; break;
+                        case 2: for (int i=0;i<7;i++) channelBitmap|=(1<<i);sysex_ctr=0;state=eTuningData; break;
                     }
                     break;
                 case eTuningData:
@@ -224,7 +265,11 @@ struct MTSClient
         if (note<0 || note>127 || retuneNote<0 || retuneNote>127) return;
         retuning[note]=440.*pow(2.,((retuneNote+detune)-69.)/12.);
     }
-    const char *getScaleName() {return global.GetScaleName?global.GetScaleName():tuningName;}
+    const char *getScaleName() {return global.isOnline() && global.GetScaleName?global.GetScaleName():tuningName;}
+    double GetPeriodRatio() {return global.isOnline() && global.GetPeriodRatio?global.GetPeriodRatio():2.;}
+    char GetMapSize() {return global.isOnline() && global.GetMapSize?global.GetMapSize():(char)12;}
+    char GetMapStartKey() {return global.isOnline() && global.GetMapStartKey?global.GetMapStartKey():(char)60;}
+    char GetRefKey() {return global.isOnline() && global.GetRefKey?global.GetRefKey():(char)69;}
     
     enum eSysexState {eIgnoring=0,eMatchingSysex,eSysexValid,eMatchingMTS,eMatchingBank,eMatchingProg,eMatchingChannel,eTuningName,eNumTunings,eTuningData,eCheckSum};
     enum eMTSFormat {eRequest=0,eBulk,eSingle,eScaleOctOneByte,eScaleOctTwoByte,eScaleOctOneByteExt,eScaleOctTwoByteExt};
@@ -234,15 +279,43 @@ struct MTSClient
     bool supportsMultiChannelNoteFiltering,supportsMultiChannelTuning,freqRequestReceived;
 };
 
+static char freqToNoteET(double freq)
+{
+    static double freqs[128];static bool init=false;
+    if (!init) {for (int i=0;i<128;i++) freqs[i]=440.*pow(2.,(i-69.)/12.);init=true;}
+    if (freq<=freqs[0]) return 0;
+    if (freq>=freqs[127]) return 127;
+    int mid=0;int n=-1;int n2=-1;
+    for (int first=0,last=127;freq!=freqs[(mid=first+(last-first)/2)];(freq<freqs[mid])?last=mid-1:first=mid+1) if (first>last)
+    {
+        if (!mid) {n=mid;break;}
+        if (mid>127) mid=127;
+        n=mid-((freq-freqs[mid-1])<(freqs[mid]-freq));
+        break;
+    }
+    if (n==-1) {if (freq==freqs[mid]) n=mid;else return 60;}
+    if (!n) n2=1;
+    else if (n==127) n2=126;
+    else n2=n+1*(fabs(freqs[n-1]-freq)<fabs(freqs[n+1]-freq)?-1:1);
+    if (n2<n) {int t=n;n=n2;n2=t;}
+    double fmid=freqs[n]*pow(2.,0.5*(log(freqs[n2]/freqs[n])/ln2));
+    return freq<fmid?n:n2;
+}
+
 // Exported functions:
 MTSClient* MTS_RegisterClient()                                             {return new MTSClient;}
 void MTS_DeregisterClient(MTSClient* c)                                     {delete c;}
 bool MTS_HasMaster(MTSClient* c)                                            {return c?c->hasMaster():false;}
 bool MTS_ShouldFilterNote(MTSClient* c,char midinote,char midichannel)      {return c?c->shouldFilterNote(midinote&127,midichannel):false;}
-double MTS_NoteToFrequency(MTSClient* c,char midinote,char midichannel)     {return c?c->freq(midinote,midichannel):(1./global.iet[midinote&127]);}
-double MTS_RetuningAsRatio(MTSClient* c,char midinote,char midichannel)     {return c?c->freq(midinote,midichannel)*global.iet[midinote&127]:1.;}
-double MTS_RetuningInSemitones(MTSClient* c,char midinote,char midichannel) {return ratioToSemitones*log(MTS_RetuningAsRatio(c,midinote,midichannel));}
+double MTS_NoteToFrequency(MTSClient* c,int midinote,char midichannel)      {return c?c->freq(midinote,midichannel):(1./global.iet[(midinote+256)&511]);}
+double MTS_RetuningAsRatio(MTSClient* c,int midinote,char midichannel)      {return c?c->freq(midinote,midichannel)*global.iet[(midinote+256)&511]:1.;}
+double MTS_RetuningInSemitones(MTSClient* c,int midinote,char midichannel)  {return ratioToSemitones*log(MTS_RetuningAsRatio(c,midinote,midichannel));}
+char MTS_FrequencyToNote(MTSClient *c,double freq,char midichannel)         {return c?c->freqToNote(freq,midichannel):freqToNoteET(freq);}
 const char *MTS_GetScaleName(MTSClient *c)                                  {return c?c->getScaleName():"";}
+double MTS_GetPeriodRatio(MTSClient *c)                                     {return c?c->GetPeriodRatio():2.;}
+char MTS_GetMapSize(MTSClient *c)                                           {return c?c->GetMapSize():(char)12;}
+char MTS_GetMapStartKey(MTSClient *c)                                       {return c?c->GetMapStartKey():(char)60;}
+char MTS_GetRefKey(MTSClient *c)                                            {return c?c->GetRefKey():(char)69;}
 void MTS_ParseMIDIDataU(MTSClient *c,const unsigned char *buffer,int len)   {if (c) c->parseMIDIData(buffer,len);}
 void MTS_ParseMIDIData(MTSClient *c,const char *buffer,int len)             {if (c) c->parseMIDIData((const unsigned char*)buffer,len);}
 

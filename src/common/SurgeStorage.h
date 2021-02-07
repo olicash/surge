@@ -35,6 +35,7 @@
 #include <map>
 
 #include "Tunings.h"
+#include "libMTSClient.h"
 
 #if WINDOWS
 #define PATH_SEPARATOR '\\'
@@ -908,6 +909,18 @@ class alignas(16) SurgeStorage
     std::recursive_mutex modRoutingMutex;
     Wavetable WindowWT;
 
+    inline float get_table_pitch(int x)
+    {
+        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
+            return table_pitch[x & 0x1ff] * MTS_RetuningAsRatio(mtsclient, (x & 0x1ff) - 256, -1);
+        return table_pitch[x & 0x1ff];
+    }
+    inline float get_table_pitch_inv(int x)
+    {
+        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
+            return table_pitch_inv[x & 0x1ff] / MTS_RetuningAsRatio(mtsclient, (x & 0x1ff) - 256, -1);
+        return table_pitch_inv[x & 0x1ff];
+    }
     float note_to_pitch(float x);
     float note_to_pitch_inv(float x);
     float note_to_pitch_ignoring_tuning(float x);
@@ -937,16 +950,30 @@ class alignas(16) SurgeStorage
     bool retuneAndRemapToScaleAndMapping(const Tunings::Scale &s,
                                          const Tunings::KeyboardMapping &k);
 
-    inline int scaleConstantNote() { return currentMapping.tuningConstantNote; }
-    inline float scaleConstantPitch() { return tuningPitch; }
+    inline int scaleConstantNote()
+    {
+        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
+            return MTS_GetRefKey(mtsclient);
+        return currentMapping.tuningConstantNote;
+    }
+    inline float scaleConstantPitch()
+    {
+        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
+            return MTS_NoteToFrequency(mtsclient, MTS_GetRefKey(mtsclient), -1) / Tunings::MIDI_0_FREQ;
+        return tuningPitch;
+    }
     inline float scaleConstantPitchInv()
     {
+        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
+            return Tunings::MIDI_0_FREQ / MTS_NoteToFrequency(mtsclient, MTS_GetRefKey(mtsclient), -1);
         return tuningPitchInv;
     } // Obviously that's the inverse of the above
 
     Tunings::Scale currentScale;
     Tunings::Tuning twelveToneStandardMapping;
     Tunings::Tuning currentTuning;
+    
+    MTSClient *mtsclient;
 
     bool isStandardTuning;
     enum TuningApplicationMode

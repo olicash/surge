@@ -486,7 +486,8 @@ bailOnPortable:
     currentMapping = Tunings::KeyboardMapping();
     twelveToneStandardMapping =
         Tunings::Tuning(Tunings::evenTemperament12NoteScale(), Tunings::KeyboardMapping());
-
+    mtsclient = MTS_RegisterClient();
+    
     // Load the XML DocStrings if we are loading startup data
     if (loadWtAndPatch)
     {
@@ -1409,7 +1410,7 @@ void SurgeStorage::load_midi_controllers()
     }
 }
 
-SurgeStorage::~SurgeStorage() {}
+SurgeStorage::~SurgeStorage() {MTS_DeregisterClient(mtsclient);}
 
 double shafted_tanh(double x) { return (exp(x) - exp(-x * 1.2)) / (exp(x) + exp(-x)); }
 
@@ -1473,7 +1474,7 @@ float SurgeStorage::note_to_pitch(float x)
     if (e > 0x1fe)
         e = 0x1fe;
 
-    return (1 - a) * table_pitch[e & 0x1ff] + a * table_pitch[(e + 1) & 0x1ff];
+    return (1 - a) * get_table_pitch(e & 0x1ff) + a * get_table_pitch((e + 1) & 0x1ff);
 }
 
 float SurgeStorage::note_to_pitch_inv(float x)
@@ -1485,7 +1486,7 @@ float SurgeStorage::note_to_pitch_inv(float x)
     if (e > 0x1fe)
         e = 0x1fe;
 
-    return (1 - a) * table_pitch_inv[e & 0x1ff] + a * table_pitch_inv[(e + 1) & 0x1ff];
+    return (1 - a) * get_table_pitch_inv(e & 0x1ff) + a * get_table_pitch_inv((e + 1) & 0x1ff);
 }
 
 float SurgeStorage::note_to_pitch_ignoring_tuning(float x)
@@ -1694,7 +1695,7 @@ bool SurgeStorage::retuneAndRemapToScaleAndMapping(const Tunings::Scale &s,
 void SurgeStorage::setTuningApplicationMode(const TuningApplicationMode m)
 {
     tuningApplicationMode = m;
-    retuneAndRemapToScaleAndMapping(currentScale, currentMapping);
+    if (!isStandardTuning) retuneAndRemapToScaleAndMapping(currentScale, currentMapping);
 }
 
 bool SurgeStorage::remapToKeyboard(const Tunings::KeyboardMapping &k)

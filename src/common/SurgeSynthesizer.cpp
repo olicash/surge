@@ -241,8 +241,6 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer *parent, std::string suppliedData
         (float)Surge::Storage::getUserDefaultValue(&storage, "mpePitchBendRange", 48);
     mpeGlobalPitchBendRange = 0;
     
-	mtsclient=MTS_RegisterClient();
-
 #if TARGET_VST3 || TARGET_VST2 || TARGET_AUDIOUNIT
     // If we are in a DAW hosted environment, choose a preset from the preset library
     // Skip LV2 until we sort out the patch change dynamics there
@@ -299,8 +297,6 @@ SurgeSynthesizer::~SurgeSynthesizer()
     {
         delete storage.getPatch().scene[0].modsources[ms_ctrl1 + i];
     }
-    
-	MTS_DeregisterClient(mtsclient);
 }
 
 int SurgeSynthesizer::calculateChannelMask(int channel, int key)
@@ -356,7 +352,7 @@ int SurgeSynthesizer::calculateChannelMask(int channel, int key)
 
 void SurgeSynthesizer::playNote(char channel, char key, char velocity, float detune)
 {
-    if (halt_engine || MTS_ShouldFilterNote(mtsclient,key,channel))
+    if (halt_engine || MTS_ShouldFilterNote(storage.mtsclient,key,channel))
         return;
 
     // For split/dual
@@ -609,7 +605,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
             new (nvoice) SurgeVoice(
                 &storage, &storage.getPatch().scene[scene], storage.getPatch().scenedata[scene],
                 key, velocity, channel, scene, detune, &channelState[channel].keyState[key],
-                &channelState[mpeMainChannel], &channelState[channel], mpeEnabled, voiceCounter++, mtsclient);
+                &channelState[mpeMainChannel], &channelState[channel], mpeEnabled, voiceCounter++);
         }
         break;
     }
@@ -684,7 +680,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
                                         storage.getPatch().scenedata[scene], key, velocity, channel,
                                         scene, detune, &channelState[channel].keyState[key],
                                         &channelState[mpeMainChannel], &channelState[channel],
-                                        mpeEnabled, voiceCounter++, mtsclient);
+                                        mpeEnabled, voiceCounter++);
             }
         }
         else
@@ -781,7 +777,7 @@ void SurgeSynthesizer::playVoice(int scene, char channel, char key, char velocit
                         &storage, &storage.getPatch().scene[scene],
                         storage.getPatch().scenedata[scene], key, velocity, channel, scene, detune,
                         &channelState[channel].keyState[key], &channelState[mpeMainChannel],
-                        &channelState[channel], mpeEnabled, voiceCounter++, mtsclient);
+                        &channelState[channel], mpeEnabled, voiceCounter++);
                 }
             }
             else

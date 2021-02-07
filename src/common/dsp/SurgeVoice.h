@@ -41,7 +41,7 @@ class alignas(16) SurgeVoice
     SurgeVoice(SurgeStorage *storage, SurgeSceneStorage *scene, pdata *params, int key,
                int velocity, int channel, int scene_id, float detune, MidiKeyState *keyState,
                MidiChannelState *mainChannelState, MidiChannelState *voiceChannelState,
-               bool mpeEnabled, int64_t voiceOrder, MTSClient* mtsclient);
+               bool mpeEnabled, int64_t voiceOrder);
     ~SurgeVoice();
 
     void release();
@@ -82,8 +82,8 @@ class alignas(16) SurgeVoice
 
             // so just iterate up. Deal with negative also of course. Since we will always be close
             // just do it brute force for now but later we can do a binary or some such.
-            float pitch0 = storage->table_pitch[tableIdx] * (1.0 - tableFrac) +
-                           storage->table_pitch[tableIdx + 1] * tableFrac;
+            float pitch0 = storage->get_table_pitch(tableIdx) * (1.0 - tableFrac) +
+                           storage->get_table_pitch(tableIdx + 1) * tableFrac;
             float targetPitch = pitch0 + fqShift / Tunings::MIDI_0_FREQ;
             if (targetPitch < 0)
                 targetPitch = 0.01;
@@ -92,7 +92,7 @@ class alignas(16) SurgeVoice
             {
                 while (tableIdx < 0x1fe)
                 {
-                    float pitch1 = storage->table_pitch[tableIdx + 1];
+                    float pitch1 = storage->get_table_pitch(tableIdx + 1);
                     if (pitch0 <= targetPitch && pitch1 > targetPitch)
                     {
                         break;
@@ -105,7 +105,7 @@ class alignas(16) SurgeVoice
             {
                 while (tableIdx > 0)
                 {
-                    float pitch1 = storage->table_pitch[tableIdx - 1];
+                    float pitch1 = storage->get_table_pitch(tableIdx - 1);
                     if (pitch0 >= targetPitch && pitch1 < targetPitch)
                     {
                         tableIdx--;
@@ -119,8 +119,8 @@ class alignas(16) SurgeVoice
             // So what's the frac
             // (1-x) * [tableIdx] + x * [tableIdx+1] = targetPitch
             // Or: x = ( target - table) / ( [ table+1 ] - [table] );
-            float frac = (targetPitch - storage->table_pitch[tableIdx]) /
-                         (storage->table_pitch[tableIdx + 1] - storage->table_pitch[tableIdx]);
+            float p = storage->get_table_pitch(tableIdx);
+            float frac = (targetPitch - p) / (storage->get_table_pitch(tableIdx + 1) - p);
             // frac = 1 -> targetpitch = +1; frac = 0 -> targetPitch
 
             // std::cout << note0 << " " << tableIdx << " " << frac << " " << fqShift << " " <<
