@@ -15,6 +15,8 @@
 
 #pragma once
 
+class SurgeStorage;
+
 struct SurgeVoiceState
 {
     bool gate;
@@ -33,5 +35,5 @@ struct SurgeVoiceState
     ControllerModulationSource mpePitchBend;
     float mpePitchBendRange;
 
-    float getPitch();
+    float getPitch(SurgeStorage *storage);
 };
