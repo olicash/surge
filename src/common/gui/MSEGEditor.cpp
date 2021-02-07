@@ -1722,7 +1722,7 @@ struct MSEGCanvas : public CControl,
         invalid();
         return kMouseEventHandled;
     }
-    virtual bool magnify(CPoint &where, float amount) override
+    virtual bool magnify(CPoint &where, float amount) // override
     {
         zoom(where, amount, 0);
         return true;

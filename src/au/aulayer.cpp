@@ -839,13 +839,13 @@ OSStatus aulayer::HandleMidiEvent(UInt8 status, UInt8 channel, UInt8 data1, UInt
 //    AUMIDIBase::HandleSysEx
 //
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-OSStatus
-aulayer::HandleSysEx(const UInt8* inData,UInt32 inLength)
-{
-    if (!IsInitialized()) return kAudioUnitErr_Uninitialized;
-    MTS_ParseMIDIDataU(plugin_instance->mtsclient,inData,inLength);
-    
-    return noErr;
-}
+// OSStatus
+// aulayer::HandleSysEx(const UInt8* inData,UInt32 inLength)
+// {
+//     if (!IsInitialized()) return kAudioUnitErr_Uninitialized;
+//     MTS_ParseMIDIDataU(plugin_instance->mtsclient,inData,inLength);
+//     
+//     return noErr;
+// }
 
 AUDIOCOMPONENT_ENTRY(AUMusicDeviceFactory, aulayer);

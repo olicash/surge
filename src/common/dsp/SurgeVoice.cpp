@@ -56,7 +56,7 @@ float SurgeVoiceState::getPitch(SurgeStorage *storage)
     }
     else
     {
-    	if (storage->isStandardTuning && MTS_HasMaster() && 
+    	if (storage->isStandardTuning && MTS_HasMaster(mtsclient) && 
     		storage->tuningApplicationMode == SurgeStorage::RETUNE_MIDI_ONLY)
     	{
     		res += MTS_RetuningInSemitones(mtsclient,key,channel);
