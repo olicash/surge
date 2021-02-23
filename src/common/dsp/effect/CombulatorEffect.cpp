@@ -34,8 +34,10 @@ CombulatorEffect::CombulatorEffect(SurgeStorage *storage, FxStorage *fxdata, pda
             {
                 Reg[e][c][q] = 0;
             }
+            WP[e][c] = 0;
         }
     }
+
     memset(filterDelay, 0, 3 * 2 * (MAX_FB_COMB_EXTENDED + FIRipol_N) * sizeof(float));
 
     // http://www.cs.cmu.edu/~music/icm-online/readings/panlaws/
@@ -66,6 +68,15 @@ void CombulatorEffect::init()
     setvars(true);
     bi = 0;
     lp.suspend();
+
+    memset(filterDelay, 0, 3 * 2 * (MAX_FB_COMB_EXTENDED + FIRipol_N) * sizeof(float));
+    envV[0] = 0.f;
+    envV[1] = 0.f;
+
+    noiseGen[0][0] = 0.f;
+    noiseGen[1][0] = 0.f;
+    noiseGen[0][1] = 0.f;
+    noiseGen[1][1] = 0.f;
 }
 
 void CombulatorEffect::setvars(bool init)
@@ -90,6 +101,8 @@ void CombulatorEffect::setvars(bool init)
     pan2.newValue(clamp1bp(*f[combulator_pan2]));
     pan3.newValue(clamp1bp(*f[combulator_pan3]));
 
+    negone.set_target(-1.f);
+
     if (init)
     {
         for (int i = 0; i < 3; ++i)
@@ -106,8 +119,11 @@ void CombulatorEffect::setvars(bool init)
         noisemix.instantize();
 
         mix.set_target(1.f);
-
         mix.instantize();
+
+        negone.set_target(-1.f);
+        negone.instantize();
+
         lp.coeff_instantize();
         hp.coeff_instantize();
 
@@ -165,12 +181,13 @@ void CombulatorEffect::process(float *dataL, float *dataR)
     /*
      * So now set up across the voices (e for 'entry' to match SurgeVoice) and the channels (c)
      */
+    bool useTuning = fxdata->p[combulator_freq1].extend_range;
     for (int e = 0; e < 3; ++e)
     {
         for (int c = 0; c < 2; ++c)
         {
             coeff[e][c].MakeCoeffs(freq[e].v, fbscaled, type,
-                                   subtype | QFUSubtypeMasks::EXTENDED_COMB, storage);
+                                   subtype | QFUSubtypeMasks::EXTENDED_COMB, storage, useTuning);
 
             for (int i = 0; i < n_cm_coeffs; i++)
             {
@@ -319,7 +336,16 @@ void CombulatorEffect::process(float *dataL, float *dataR)
     lp.process_block(L, R);
     hp.process_block(L, R);
 
-    mix.set_target_smoothed(limit_range(*f[combulator_mix], 0.f, 1.f));
+    /*
+    auto cm = limit_range(*f[combulator_mix], -1.f, 1.f);
+    if (cm < 0)
+    {
+        negone.multiply_2_blocks(L, R, BLOCK_SIZE_QUAD);
+        cm = -cm;
+    }
+    */
+    auto cm = limit_range(*f[combulator_mix], 0.f, 1.f);
+    mix.set_target_smoothed(cm);
     mix.fade_2_blocks_to(dataL, L, dataR, R, dataL, dataR, BLOCK_SIZE_QUAD);
 }
 

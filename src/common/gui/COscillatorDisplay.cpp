@@ -185,7 +185,7 @@ void COscillatorDisplay::draw(CDrawContext *dc)
                 use_display = false;
 
             if (use_display)
-                osc->init(disp_pitch_rs, true);
+                osc->init(disp_pitch_rs, true, true);
 
             int block_pos = BLOCK_SIZE_OS;
             for (int i = 0; i < totalSamples; i += averagingWindow)
@@ -359,6 +359,12 @@ void COscillatorDisplay::draw(CDrawContext *dc)
         wtlbl.offset(0, -4);
         rmenu = wtlbl;
         rmenu.inset(14, 0);
+
+        rprev = wtlbl;
+        rprev.right = rmenu.left; // -1;
+        rnext = wtlbl;
+        rnext.left = rmenu.right; // +1;
+
         char wttxt[256];
 
         storage->waveTableDataMutex.lock();
@@ -386,10 +392,45 @@ void COscillatorDisplay::draw(CDrawContext *dc)
         char *r = strrchr(wttxt, '.');
         if (r)
             *r = 0;
-        VSTGUI::CColor fgcol = skin->getColor(Colors::Osc::Filename::Background);
+        auto fgcol = skin->getColor(Colors::Osc::Filename::Background);
+        auto fgframe = skin->getColor(Colors::Osc::Filename::Frame);
+        auto fgtext = skin->getColor(Colors::Osc::Filename::Text);
+
+        auto fgcolHov = skin->getColor(Colors::Osc::Filename::BackgroundHover);
+        auto fgframeHov = skin->getColor(Colors::Osc::Filename::FrameHover);
+        auto fgtextHov = skin->getColor(Colors::Osc::Filename::TextHover);
+
         dc->setFillColor(fgcol);
-        dc->drawRect(rmenu, kDrawFilled);
-        dc->setFontColor(skin->getColor(Colors::Osc::Filename::Text));
+        auto rbg = rmenu;
+
+        if (skin->getVersion() >= 2)
+        {
+            if (isWTHover == MENU)
+            {
+                dc->setFrameColor(fgframeHov);
+                dc->setFillColor(fgcolHov);
+            }
+            else
+            {
+                dc->setFillColor(fgcol);
+                dc->setFrameColor(fgframe);
+            }
+            dc->drawRect(rmenu, kDrawFilledAndStroked);
+        }
+        else
+        {
+            dc->setFillColor(fgcol);
+            dc->drawRect(rmenu, kDrawFilled);
+        }
+
+        if (skin->getVersion() >= 2 && isWTHover == MENU)
+        {
+            dc->setFontColor(skin->getColor(Colors::Osc::Filename::TextHover));
+        }
+        else
+        {
+            dc->setFontColor(skin->getColor(Colors::Osc::Filename::Text));
+        }
         dc->setFont(displayFont);
         dc->drawString(wttxt, rmenu, kCenterText, true);
 
@@ -399,19 +440,43 @@ void COscillatorDisplay::draw(CDrawContext *dc)
         if(oscdata->wt.flags & wtf_is_sample) dc->drawString("IS
         SAMPLE",wtlbl_status,false,kRightText);*/
 
-        rprev = wtlbl;
-        rprev.right = rmenu.left; // -1;
-        rnext = wtlbl;
-        rnext.left = rmenu.right; // +1;
-        dc->setFillColor(fgcol);
-        dc->drawRect(rprev, kDrawFilled);
-        dc->drawRect(rnext, kDrawFilled);
+        if (skin->getVersion() == 1)
+        {
+            dc->setFillColor(fgcol);
+            dc->drawRect(rprev, kDrawFilled);
+            dc->drawRect(rnext, kDrawFilled);
+        }
+        else
+        {
+            if (isWTHover == PREV)
+            {
+                dc->setFrameColor(fgframeHov);
+                dc->setFillColor(fgcolHov);
+            }
+            else
+            {
+                dc->setFillColor(fgcol);
+                dc->setFrameColor(fgframe);
+            }
+            dc->drawRect(rprev, kDrawFilledAndStroked);
+
+            if (isWTHover == NEXT)
+            {
+                dc->setFrameColor(fgframeHov);
+                dc->setFillColor(fgcolHov);
+            }
+            else
+            {
+                dc->setFillColor(fgcol);
+                dc->setFrameColor(fgframe);
+            }
+            dc->drawRect(rnext, kDrawFilledAndStroked);
+        }
         dc->setFrameColor(kBlackCColor);
 
         dc->saveGlobalState();
 
         dc->setDrawMode(kAntiAliasing);
-        dc->setFillColor(skin->getColor(Colors::Osc::Filename::Text));
 
         auto marginy = 2;
         float triw = 6;
@@ -421,12 +486,28 @@ void COscillatorDisplay::draw(CDrawContext *dc)
         float trinextstart = rnext.right - ((rnext.getWidth() - triw) / 2.f);
 
         VSTGUI::CDrawContext::PointList trinext;
+        if (skin->getVersion() >= 2 && isWTHover == NEXT)
+        {
+            dc->setFillColor(skin->getColor(Colors::Osc::Filename::TextHover));
+        }
+        else
+        {
+            dc->setFillColor(skin->getColor(Colors::Osc::Filename::Text));
+        }
         trinext.push_back(VSTGUI::CPoint(trinextstart - triw, trianch));
         trinext.push_back(VSTGUI::CPoint(trinextstart, trianch + (trih / 2.f)));
         trinext.push_back(VSTGUI::CPoint(trinextstart - triw, trianch + trih));
         dc->drawPolygon(trinext, kDrawFilled);
 
         VSTGUI::CDrawContext::PointList triprev;
+        if (skin->getVersion() >= 2 && isWTHover == PREV)
+        {
+            dc->setFillColor(skin->getColor(Colors::Osc::Filename::TextHover));
+        }
+        else
+        {
+            dc->setFillColor(skin->getColor(Colors::Osc::Filename::Text));
+        }
         triprev.push_back(VSTGUI::CPoint(triprevstart + triw, trianch));
         triprev.push_back(VSTGUI::CPoint(triprevstart, trianch + (trih / 2.f)));
         triprev.push_back(VSTGUI::CPoint(triprevstart + triw, trianch + trih));
@@ -718,19 +799,36 @@ CMouseEventResult COscillatorDisplay::onMouseUp(CPoint &where, const CButtonStat
 }
 CMouseEventResult COscillatorDisplay::onMouseMoved(CPoint &where, const CButtonState &buttons)
 {
+
     if (uses_wavetabledata(oscdata->type.val.i))
     {
-        if (rprev.pointInside(where) || rnext.pointInside(where) || rmenu.pointInside(where))
+        auto owt = isWTHover;
+        isWTHover = NONE;
+        if (uses_wavetabledata(oscdata->type.val.i))
         {
-            // getFrame()->setCursor( VSTGUI::kCursorHand );
+            if (rprev.pointInside(where))
+            {
+                isWTHover = PREV;
+            }
+            else if (rnext.pointInside(where))
+            {
+                isWTHover = NEXT;
+            }
+            else if (rmenu.pointInside(where))
+            {
+                isWTHover = MENU;
+            }
         }
-        else
-        {
-            // getFrame()->setCursor( VSTGUI::kCursorDefault );
-        }
+        if (owt != isWTHover)
+            invalid();
     }
     else
     {
+        if (isWTHover != NONE)
+        {
+            isWTHover = NONE;
+            invalid();
+        }
         // getFrame()->setCursor( VSTGUI::kCursorDefault );
     }
 
@@ -760,4 +858,31 @@ void COscillatorDisplay::invalidateIfIdIsInRange(int id)
     {
         invalid();
     }
+}
+CMouseEventResult COscillatorDisplay::onMouseEntered(CPoint &where, const CButtonState &buttons)
+{
+    isWTHover = NONE;
+    if (uses_wavetabledata(oscdata->type.val.i))
+    {
+        if (rprev.pointInside(where))
+        {
+            isWTHover = PREV;
+        }
+        else if (rnext.pointInside(where))
+        {
+            isWTHover = NEXT;
+        }
+        else if (rmenu.pointInside(where))
+        {
+            isWTHover = MENU;
+        }
+    }
+    invalid();
+    return kMouseEventHandled;
+}
+CMouseEventResult COscillatorDisplay::onMouseExited(CPoint &where, const CButtonState &buttons)
+{
+    isWTHover = NONE;
+    invalid();
+    return kMouseEventHandled;
 }

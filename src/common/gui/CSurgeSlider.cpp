@@ -15,6 +15,7 @@
 
 #include "SurgeGUIEditor.h"
 #include "CSurgeSlider.h"
+#include "guihelpers.h"
 #include "resource.h"
 #include "DspUtilities.h"
 #include "MouseCursorControl.h"
@@ -159,7 +160,8 @@ void CSurgeSlider::draw(CDrawContext *dc)
 
     bool drawLabel = true;
 
-    if (skin && skinControl && skin->propertyValue(skinControl, "hide_slider_label", "") == "true")
+    if (skin && skinControl &&
+        skin->propertyValue(skinControl, Surge::Skin::Component::HIDE_SLIDER_LABEL, "") == "true")
     {
         drawLabel = false;
     }
@@ -700,8 +702,7 @@ CMouseEventResult CSurgeSlider::onMouseDown(CPoint &where, const CButtonState &b
         }
     }
     if (storage)
-        this->hideCursor =
-            !Surge::Storage::getUserDefaultValue(storage, "showCursorWhileEditing", 0);
+        this->hideCursor = !Surge::UI::showCursor(storage);
 
     hasBeenDraggedDuringMouseGesture = false;
     if (wheelInitiatedEdit)
@@ -1048,28 +1049,29 @@ void CSurgeSlider::onSkinChanged()
 
     if (skinControl.get())
     {
-        auto htr = skin->propertyValue(skinControl, "handle_tray");
+        auto htr = skin->propertyValue(skinControl, Surge::Skin::Component::SLIDER_TRAY);
         if (htr.isJust())
         {
             pTray = associatedBitmapStore->getBitmapByStringID(htr.fromJust());
         }
-        auto hi = skin->propertyValue(skinControl, "handle_image");
+        auto hi = skin->propertyValue(skinControl, Surge::Skin::Component::HANDLE_IMAGE);
         if (hi.isJust())
         {
             pHandle = associatedBitmapStore->getBitmapByStringID(hi.fromJust());
         }
-        auto ho = skin->propertyValue(skinControl, "handle_hover_image");
+        auto ho = skin->propertyValue(skinControl, Surge::Skin::Component::HANDLE_HOVER_IMAGE);
         if (ho.isJust())
         {
             pHandleHover = associatedBitmapStore->getBitmapByStringID(ho.fromJust());
         }
-        auto ht = skin->propertyValue(skinControl, "handle_temposync_image");
+        auto ht = skin->propertyValue(skinControl, Surge::Skin::Component::HANDLE_TEMPOSYNC_IMAGE);
         if (ht.isJust())
         {
             pTempoSyncHandle = associatedBitmapStore->getBitmapByStringID(ht.fromJust());
         }
 
-        auto hth = skin->propertyValue(skinControl, "handle_temposync_hover_image");
+        auto hth =
+            skin->propertyValue(skinControl, Surge::Skin::Component::HANDLE_TEMPOSYNC_HOVER_IMAGE);
         if (hth.isJust())
         {
             pTempoSyncHoverHandle = associatedBitmapStore->getBitmapByStringID(hth.fromJust());

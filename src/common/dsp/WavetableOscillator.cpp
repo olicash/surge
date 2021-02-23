@@ -28,7 +28,7 @@ WavetableOscillator::WavetableOscillator(SurgeStorage *storage, OscillatorStorag
 
 WavetableOscillator::~WavetableOscillator() {}
 
-void WavetableOscillator::init(float pitch, bool is_display)
+void WavetableOscillator::init(float pitch, bool is_display, bool nonzero_init_drift)
 {
     assert(storage);
     first_run = true;
@@ -106,7 +106,9 @@ void WavetableOscillator::init(float pitch, bool is_display)
         mipmap[i] = 0;
         mipmap_ofs[i] = 0;
         driftlfo[i] = 0.f;
-        driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
+        driftlfo2[i] = 0.f;
+        if (nonzero_init_drift)
+            driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
     }
 }
 
@@ -136,7 +138,7 @@ void WavetableOscillator::init_default_values()
     oscdata->p[wt_saturate].val.f = 0.f;
     oscdata->p[wt_formant].val.f = 0.f;
     oscdata->p[wt_skewh].val.f = 0.f;
-    oscdata->p[wt_unison_detune].val.f = 0.2f;
+    oscdata->p[wt_unison_detune].val.f = 0.1f;
     oscdata->p[wt_unison_voices].val.i = 1;
 }
 

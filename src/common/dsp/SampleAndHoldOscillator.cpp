@@ -37,7 +37,7 @@ SampleAndHoldOscillator::SampleAndHoldOscillator(SurgeStorage *storage, Oscillat
 
 SampleAndHoldOscillator::~SampleAndHoldOscillator() {}
 
-void SampleAndHoldOscillator::init(float pitch, bool is_display)
+void SampleAndHoldOscillator::init(float pitch, bool is_display, bool nonzero_init_drift)
 {
     assert(storage);
     first_run = true;
@@ -111,7 +111,9 @@ void SampleAndHoldOscillator::init(float pitch, bool is_display)
         last_level[i] = 0.0;
         pwidth[i] = limit_range(l_pw.v, 0.001, 0.999);
         driftlfo[i] = 0.f;
-        driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
+        driftlfo2[i] = 0.f;
+        if (nonzero_init_drift)
+            driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
     }
 
     hp.coeff_instantize();
@@ -148,7 +150,7 @@ void SampleAndHoldOscillator::init_default_values()
     oscdata->p[shn_highcut].val.f = oscdata->p[shn_highcut].val_max.f; // low cut at the top
     oscdata->p[shn_sync].deactivated = true;
     oscdata->p[shn_sync].val.f = 0.f;
-    oscdata->p[shn_unison_detune].val.f = 0.2f;
+    oscdata->p[shn_unison_detune].val.f = 0.1f;
     oscdata->p[shn_unison_voices].val.i = 1;
 }
 

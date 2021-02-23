@@ -49,7 +49,13 @@ void CLFOGui::drawtri(CRect r, CDrawContext *dc, int orientation)
     pl.push_back(CPoint(startx, starty));
     pl.push_back(CPoint(endx, midy));
     pl.push_back(CPoint(startx, endy));
+
     dc->setFillColor(skin->getColor(Colors::LFO::StepSeq::Button::Arrow));
+    if (((ss_shift_hover == 1 && orientation < 0) || (ss_shift_hover == 2 && orientation >= 0)) &&
+        skin->getVersion() >= 2)
+    {
+        dc->setFillColor(skin->getColor(Colors::LFO::StepSeq::Button::ArrowHover));
+    }
     dc->drawPolygon(pl, kDrawFilled);
 }
 
@@ -144,8 +150,10 @@ void CLFOGui::draw(CDrawContext *dc)
         tlfo->attack();
 
         LFOStorage deactivateStorage;
+        bool hasFullWave = false, waveIsAmpWave = false;
         if (lfodata->rate.deactivated)
         {
+            hasFullWave = true;
             memcpy((void *)(&deactivateStorage), (void *)lfodata, sizeof(LFOStorage));
             memcpy((void *)tpd, (void *)tp, n_scene_params * sizeof(pdata));
 
@@ -163,6 +171,25 @@ void CLFOGui::draw(CDrawContext *dc)
             tFullWave = new LfoModulationSource();
             tFullWave->assign(storage, &deactivateStorage, tpd, 0, ss, ms, fs, true);
             tFullWave->attack();
+        }
+        else if (lfodata->magnitude.val.f != lfodata->magnitude.val_max.f &&
+                 skin->getVersion() >= 2)
+        {
+            bool useAmpWave =
+                Surge::Storage::getUserDefaultValue(storage, "showGhostedLFOWaveReference", 1);
+            if (useAmpWave)
+            {
+                hasFullWave = true;
+                waveIsAmpWave = true;
+                memcpy((void *)(&deactivateStorage), (void *)lfodata, sizeof(LFOStorage));
+                memcpy((void *)tpd, (void *)tp, n_scene_params * sizeof(pdata));
+
+                deactivateStorage.magnitude.val.f = 1.f;
+                tpd[lfodata->magnitude.param_id_in_scene].f = 1.f;
+                tFullWave = new LfoModulationSource();
+                tFullWave->assign(storage, &deactivateStorage, tpd, 0, ss, ms, fs, true);
+                tFullWave->attack();
+            }
         }
         CRect boxo(maindisp);
         boxo.offset(-size.left - splitpoint, -size.top);
@@ -193,14 +220,14 @@ void CLFOGui::draw(CDrawContext *dc)
         float valScale = 100.0;
         int susCountdown = -1;
 
-        float priorval = 0.f;
+        float priorval = 0.f, priorwval = 0.f;
         for (int i = 0; i < totalSamples; i += averagingWindow)
         {
             float val = 0;
             float wval = 0;
             float eval = 0;
-            float minval = 1000000;
-            float maxval = -1000000;
+            float minval = 1000000, minwval = 1000000;
+            float maxval = -1000000, maxwval = -1000000;
             float firstval;
             float lastval;
             for (int s = 0; s < averagingWindow; s++)
@@ -225,7 +252,12 @@ void CLFOGui::draw(CDrawContext *dc)
 
                 val += tlfo->output;
                 if (tFullWave)
-                    wval += tFullWave->output;
+                {
+                    auto v = tFullWave->output;
+                    minwval = std::min(v, minwval);
+                    maxwval = std::max(v, maxwval);
+                    wval += v;
+                }
                 if (s == 0)
                     firstval = tlfo->output;
                 if (s == averagingWindow - 1)
@@ -239,6 +271,8 @@ void CLFOGui::draw(CDrawContext *dc)
             eval = eval / averagingWindow;
             val = ((-val + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
             wval = ((-wval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
+            minwval = ((-minwval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
+            maxwval = ((-maxwval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
             float euval = ((-eval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
             float edval = ((eval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
 
@@ -253,38 +287,46 @@ void CLFOGui::draw(CDrawContext *dc)
                                                            // added, remove it from this condition!
                     edpath->beginSubpath(xc, edval);
                 if (tFullWave)
+                {
                     deactPath->beginSubpath(xc, wval);
+                }
                 priorval = val;
+                priorwval = wval;
             }
             else
             {
-                if (maxval - minval > 0.2)
+                minval = ((-minval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
+                maxval = ((-maxval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
+                // Windows is sensitive to out-of-order line draws in a way which causes spikes.
+                // Make sure we draw one closest to prior first. See #1438
+                float firstval = minval;
+                float secondval = maxval;
+                if (priorval - minval < maxval - priorval)
                 {
-                    minval = ((-minval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
-                    maxval = ((-maxval + 1.0f) * 0.5 * 0.8 + 0.1) * valScale;
-                    // Windows is sensitive to out-of-order line draws in a way which causes spikes.
-                    // Make sure we draw one closest to prior first. See #1438
-                    float firstval = minval;
-                    float secondval = maxval;
-                    if (priorval - minval < maxval - priorval)
-                    {
-                        firstval = maxval;
-                        secondval = minval;
-                    }
-                    path->addLine(xc - 0.1 * valScale / totalSamples, firstval);
-                    path->addLine(xc + 0.1 * valScale / totalSamples, secondval);
+                    firstval = maxval;
+                    secondval = minval;
                 }
-                else
-                {
-                    path->addLine(xc, val);
-                }
+                path->addLine(xc - 0.1 * valScale / totalSamples, firstval);
+                path->addLine(xc + 0.1 * valScale / totalSamples, secondval);
+
                 priorval = val;
                 eupath->addLine(xc, euval);
                 edpath->addLine(xc, edval);
 
-                // We can skip the ordering thing since we know we ahve set rate here to a low rate
+                // We can skip the ordering thing since we know we have set rate here to a low rate
                 if (tFullWave)
-                    deactPath->addLine(xc, wval);
+                {
+                    firstval = minwval;
+                    secondval = maxwval;
+                    if (priorwval - minwval < maxwval - priorwval)
+                    {
+                        firstval = maxwval;
+                        secondval = minwval;
+                    }
+                    deactPath->addLine(xc - 0.1 * valScale / totalSamples, firstval);
+                    deactPath->addLine(xc - 0.1 * valScale / totalSamples, secondval);
+                    priorwval = wval;
+                }
             }
         }
         delete tlfo;
@@ -422,11 +464,26 @@ void CLFOGui::draw(CDrawContext *dc)
         dc->setLineWidth(1.3);
 #endif
 
-        if (lfodata->rate.deactivated)
+        if (hasFullWave)
         {
-            dc->setFrameColor(skin->getColor(Colors::LFO::Waveform::DeactivatedWave));
-            dc->drawGraphicsPath(deactPath, VSTGUI::CDrawContext::PathDrawMode::kPathStroked,
-                                 &tfpath);
+            dc->saveGlobalState();
+
+            if (waveIsAmpWave)
+            {
+                dc->setFrameColor(skin->getColor(Colors::LFO::Waveform::GhostedWave));
+#if !TARGET_JUCE_UI
+                dc->setLineStyle(VSTGUI::kLineOnOffDash);
+#endif
+                dc->drawGraphicsPath(deactPath, VSTGUI::CDrawContext::PathDrawMode::kPathStroked,
+                                     &tfpath);
+            }
+            else
+            {
+                dc->setFrameColor(skin->getColor(Colors::LFO::Waveform::DeactivatedWave));
+                dc->drawGraphicsPath(deactPath, VSTGUI::CDrawContext::PathDrawMode::kPathStroked,
+                                     &tfpath);
+            }
+            dc->restoreGlobalState();
         }
 
         // LFO waveform itself
@@ -636,17 +693,6 @@ void CLFOGui::draw(CDrawContext *dc)
 
     setDirty(false);
 }
-
-enum
-{
-    cs_null = 0,
-    cs_shape,
-    cs_steps,
-    cs_trigtray_toggle,
-    cs_loopstart,
-    cs_loopend,
-    cs_linedrag,
-};
 
 void CLFOGui::drawStepSeq(VSTGUI::CDrawContext *dc, VSTGUI::CRect &maindisp,
                           VSTGUI::CRect &leftpanel)
@@ -1318,8 +1364,7 @@ CMouseEventResult CLFOGui::onMouseDown(CPoint &where, const CButtonState &button
         if (rect_steps.pointInside(where))
         {
             if (storage)
-                this->hideCursor =
-                    !Surge::Storage::getUserDefaultValue(storage, "showCursorWhileEditing", 0);
+                this->hideCursor = !Surge::UI::showCursor(storage);
 
             if (buttons.isRightButton())
             {

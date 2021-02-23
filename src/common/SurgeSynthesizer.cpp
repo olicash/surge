@@ -54,6 +54,7 @@
 #include "effect/Effect.h"
 
 #include <thread>
+#include "libMTSClient.h"
 
 using namespace std;
 
@@ -152,10 +153,18 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer *parent, std::string suppliedData
         scene.modsources[ms_alternate_bipolar] = new AlternateModulationSource(true);
         scene.modsources[ms_alternate_unipolar] = new AlternateModulationSource(false);
 
+        for (int osc = 0; osc < n_oscs; osc++)
+        {
+            // p 5 is unison detune
+            scene.osc[osc].p[5].val.f = 0.1f;
+        }
+
         for (int i = 0; i < n_filterunits_per_scene; i++)
         {
             scene.filterunit[i].type.set_user_data(&patch.patchFilterSelectorMapper);
         }
+
+        scene.filterblock_configuration.val.i = fc_wide;
 
         for (int l = 0; l < n_lfos_scene; l++)
         {
@@ -197,7 +206,7 @@ SurgeSynthesizer::SurgeSynthesizer(PluginLayer *parent, std::string suppliedData
     storage.getPatch().category = "Init";
     storage.getPatch().name = "Init";
     storage.getPatch().comment = "";
-    storage.getPatch().author = "";
+    storage.getPatch().author = "Surge Synth Team";
     midiprogramshavechanged = false;
 
     for (int i = 0; i < BLOCK_SIZE; i++)
@@ -2066,7 +2075,8 @@ bool SurgeSynthesizer::setParameter01(long index, float value, bool external, bo
             }
             else
             {
-                storage.getPatch().scene[s].filterunit[1].cutoff.set_type(ct_freq_audible);
+                storage.getPatch().scene[s].filterunit[1].cutoff.set_type(
+                    ct_freq_audible_with_tunability);
                 storage.getPatch().scene[s].filterunit[1].cutoff.set_name("Cutoff");
             }
             need_refresh = true;
@@ -2292,8 +2302,16 @@ bool SurgeSynthesizer::loadOscalgos()
         for (int i = 0; i < n_oscs; i++)
         {
             bool resend = false;
+
             if (storage.getPatch().scene[s].osc[i].queue_type > -1)
             {
+                // clear assigned modulation if we change osc type, see issue #2224
+                if (storage.getPatch().scene[s].osc[i].queue_type !=
+                    storage.getPatch().scene[s].osc[i].type.val.i)
+                {
+                    clear_osc_modulation(s, i);
+                }
+
                 storage.getPatch().scene[s].osc[i].type.val.i =
                     storage.getPatch().scene[s].osc[i].queue_type;
                 storage.getPatch().update_controls(false, &storage.getPatch().scene[s].osc[i]);
@@ -2312,24 +2330,45 @@ bool SurgeSynthesizer::loadOscalgos()
                     double d;
                     int j;
                     char lbl[256];
+
                     sprintf(lbl, "p%i", k);
+
                     if (storage.getPatch().scene[s].osc[i].p[k].valtype == vt_float)
                     {
                         if (e->QueryDoubleAttribute(lbl, &d) == TIXML_SUCCESS)
+                        {
                             storage.getPatch().scene[s].osc[i].p[k].val.f = (float)d;
+                        }
                     }
                     else
                     {
                         if (e->QueryIntAttribute(lbl, &j) == TIXML_SUCCESS)
+                        {
                             storage.getPatch().scene[s].osc[i].p[k].val.i = j;
+                        }
+                    }
+
+                    sprintf(lbl, "p%i_deform_type", k);
+
+                    if (e->QueryIntAttribute(lbl, &j) == TIXML_SUCCESS)
+                    {
+                        storage.getPatch().scene[s].osc[i].p[k].deform_type = j;
                     }
                 }
+
                 int rt;
                 if (e->QueryIntAttribute("retrigger", &rt) == TIXML_SUCCESS)
                 {
                     storage.getPatch().scene[s].osc[i].retrigger.val.b = rt;
                 }
 
+                /*
+                 * Some oscillator types can change display when you change values
+                 */
+                if (storage.getPatch().scene[s].osc[i].type.val.i == ot_dpw)
+                {
+                    refresh_editor = true;
+                }
                 storage.getPatch().scene[s].osc[i].queue_xmldata = 0;
             }
             if (resend)
@@ -3271,6 +3310,20 @@ void SurgeSynthesizer::processControl()
     for (int i = 0; i < n_fx_slots; ++i)
         if (fx[i])
             refresh_editor |= fx[i]->checkHasInvalidatedUI();
+
+    if (storage.oddsound_mts_client)
+    {
+        storage.oddsound_mts_on_check = (storage.oddsound_mts_on_check + 1) & (1024 - 1);
+        if (storage.oddsound_mts_on_check == 0)
+        {
+            bool prior = storage.oddsound_mts_active;
+            storage.oddsound_mts_active = MTS_HasMaster(storage.oddsound_mts_client);
+            if (prior != storage.oddsound_mts_active)
+            {
+                refresh_editor = true;
+            }
+        }
+    }
 }
 
 void SurgeSynthesizer::process()

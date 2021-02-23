@@ -1,7 +1,9 @@
 #include "HeadlessUtils.h"
 #include "Player.h"
+#include "filesystem/import.h"
 #include <iostream>
 #include <sstream>
+#include <chrono>
 
 namespace Surge
 {
@@ -99,14 +101,11 @@ void playSomeBach()
     std::string tmpdir = "/tmp";
     std::string fname = tmpdir + "/988-v05.mid";
 
-    FILE *tf = fopen(fname.c_str(), "r");
-    if (!tf)
+    if (!fs::exists(fs::path{fname}))
     {
         std::string cmd = "curl -o " + fname + " http://www.jsbach.net/midi/bwv988/988-v05.mid";
         auto res = system(cmd.c_str());
     }
-    else
-        fclose(tf);
 
     std::string otp = "DX EP 1";
     for (int i = 0; i < surge->storage.patch_list.size(); ++i)
@@ -508,6 +507,47 @@ void filterAnalyzer(int ft, int sft, std::ostream &os)
     standardCutoffCurve(ft, sft, os);
     middleCSawIntoFilterVsCutoff(ft, sft, os);
     middleCSawIntoFilterVsReso(ft, sft, os);
+}
+
+void performancePlay(const std::string &patchName, int mode)
+{
+    auto surge = Surge::Headless::createSurge(48000);
+    std::cout << "Performance Mode with surge at 48k\n"
+              << "-- Ctrl-C to exit\n"
+              << "-- patchName = " << patchName << "\n"
+              << "-- mode = " << mode << std::endl;
+
+    surge->loadPatchByPath(patchName.c_str(), -1, "RUNTIME");
+    for (int i = 0; i < 10; ++i)
+        surge->process();
+
+    surge->playNote(0, 60, 127, 0);
+
+    int ct = 0;
+    int target = 48000 / BLOCK_SIZE;
+    auto cpt = std::chrono::high_resolution_clock::now();
+    std::chrono::seconds oneSec(1);
+    auto msOne = std::chrono::duration_cast<std::chrono::microseconds>(oneSec).count();
+    while (true)
+    {
+        surge->process();
+        if (ct++ == target)
+        {
+            auto et = std::chrono::high_resolution_clock::now();
+            auto diff = et - cpt;
+            auto ms = std::chrono::duration_cast<std::chrono::microseconds>(diff).count();
+            double pct = 1.0 * ms / msOne * 100.0;
+
+            float sum = 0;
+            for (int i = 0; i < BLOCK_SIZE; ++i)
+                sum += surge->output[0][i] * surge->output[0][i];
+
+            std::cout << "Resetting timers " << ms << "ms / " << pct << "% L2N=" << sum
+                      << std::endl;
+            ct = 0;
+            cpt = et;
+        }
+    }
 }
 
 void generateNLFeedbackNorms()

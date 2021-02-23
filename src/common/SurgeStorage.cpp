@@ -14,7 +14,6 @@
 */
 
 #include "DspUtilities.h"
-#include "SurgeError.h"
 #include "SurgeStorage.h"
 #include "UserInteractions.h"
 #include <set>
@@ -47,6 +46,7 @@
 #include "version.h"
 
 #include "strnatcmp.h"
+#include "libMTSClient.h"
 
 // FIXME probably remove this when we remove the hardcoded hack below
 #include "MSEGModulationHelper.h"
@@ -204,8 +204,7 @@ SurgeStorage::SurgeStorage(std::string suppliedDataPath) : otherscene_clients(0)
 #if MAC || LINUX
     const char *homePath = getenv("HOME");
     if (!homePath)
-        throw Surge::Error("The environment variable HOME does not exist",
-                           "Surge failed to initialize");
+        throw std::runtime_error("The environment variable HOME does not exist");
 
     installedPath = getDLLPath();
 #endif
@@ -435,10 +434,9 @@ bailOnPortable:
 
     if (!snapshotloader.LoadFile(snapshotmenupath)) // load snapshots (& config-stuff)
     {
-        Surge::Error exc("Cannot find 'configuration.xml' in path '" + datapath +
-                             "'. Please reinstall surge.",
-                         "Surge is not properly installed.");
-        Surge::UserInteractions::promptError(exc);
+        Surge::UserInteractions::promptError("Cannot find 'configuration.xml' in path '" +
+                                                 datapath + "'. Please reinstall surge.",
+                                             "Surge is not properly installed.");
     }
 
     load_midi_controllers();
@@ -486,8 +484,7 @@ bailOnPortable:
     currentMapping = Tunings::KeyboardMapping();
     twelveToneStandardMapping =
         Tunings::Tuning(Tunings::evenTemperament12NoteScale(), Tunings::KeyboardMapping());
-    mtsclient = MTS_RegisterClient();
-    
+
     // Load the XML DocStrings if we are loading startup data
     if (loadWtAndPatch)
     {
@@ -580,6 +577,17 @@ bailOnPortable:
 
     monoPedalMode = (MonoPedalMode)Surge::Storage::getUserDefaultValue(
         this, "monoPedalMode", MonoPedalMode::HOLD_ALL_NOTES);
+
+    for (int s = 0; s < n_scenes; ++s)
+    {
+        getPatch().scene[s].drift.extend_range = true;
+    }
+
+    oddsound_mts_client = MTS_RegisterClient();
+    if (oddsound_mts_client)
+    {
+        oddsound_mts_active = MTS_HasMaster(oddsound_mts_client);
+    }
 }
 
 SurgePatch &SurgeStorage::getPatch() { return *_patch.get(); }
@@ -988,37 +996,34 @@ void SurgeStorage::load_wt(string filename, Wavetable *wt, OscillatorStorage *os
 
 bool SurgeStorage::load_wt_wt(string filename, Wavetable *wt)
 {
-    FILE *f = fopen(filename.c_str(), "rb");
-    if (!f)
+    std::filebuf f;
+    if (!f.open(string_to_path(filename), std::ios::binary | std::ios::in))
         return false;
     wt_header wh;
     memset(&wh, 0, sizeof(wt_header));
 
-    size_t read = fread(&wh, sizeof(wt_header), 1, f);
+    size_t read = f.sgetn(reinterpret_cast<char *>(&wh), sizeof(wh));
     // I'm not sure why this ever worked but it is checking the 4 bytes against vawt so...
     // if (wh.tag != vt_read_int32BE('vawt'))
     if (!(wh.tag[0] == 'v' && wh.tag[1] == 'a' && wh.tag[2] == 'w' && wh.tag[3] == 't'))
     {
         // SOME sort of error reporting is appropriate
-        fclose(f);
         return false;
     }
 
-    void *data;
     size_t ds;
     if (vt_read_int16LE(wh.flags) & wtf_int16)
         ds = sizeof(short) * vt_read_int16LE(wh.n_tables) * vt_read_int32LE(wh.n_samples);
     else
         ds = sizeof(float) * vt_read_int16LE(wh.n_tables) * vt_read_int32LE(wh.n_samples);
 
-    data = malloc(ds);
-    read = fread(data, 1, ds, f);
+    const std::unique_ptr<char[]> data{new char[ds]};
+    read = f.sgetn(data.get(), ds);
     // FIXME - error if read != ds
 
     waveTableDataMutex.lock();
-    bool wasBuilt = wt->BuildWT(data, wh, false);
+    bool wasBuilt = wt->BuildWT(data.get(), wh, false);
     waveTableDataMutex.unlock();
-    free(data);
 
     if (!wasBuilt)
     {
@@ -1035,11 +1040,8 @@ bool SurgeStorage::load_wt_wt(string filename, Wavetable *wt)
                "GitHub issue at "
             << " https://github.com/surge-synthesizer/surge/";
         Surge::UserInteractions::promptError(oss.str(), "Wavetable Loading Error");
-        fclose(f);
-        return false;
     }
-    fclose(f);
-    return true;
+    return wasBuilt;
 }
 int SurgeStorage::get_clipboard_type() { return clipboard_type; }
 
@@ -1410,7 +1412,13 @@ void SurgeStorage::load_midi_controllers()
     }
 }
 
-SurgeStorage::~SurgeStorage() {MTS_DeregisterClient(mtsclient);}
+SurgeStorage::~SurgeStorage()
+{
+    if (oddsound_mts_client)
+    {
+        MTS_DeregisterClient(oddsound_mts_client);
+    }
+}
 
 double shafted_tanh(double x) { return (exp(x) - exp(-x * 1.2)) / (exp(x) + exp(-x)); }
 
@@ -1474,7 +1482,7 @@ float SurgeStorage::note_to_pitch(float x)
     if (e > 0x1fe)
         e = 0x1fe;
 
-    return (1 - a) * get_table_pitch(e & 0x1ff) + a * get_table_pitch((e + 1) & 0x1ff);
+    return (1 - a) * table_pitch[e & 0x1ff] + a * table_pitch[(e + 1) & 0x1ff];
 }
 
 float SurgeStorage::note_to_pitch_inv(float x)
@@ -1486,7 +1494,7 @@ float SurgeStorage::note_to_pitch_inv(float x)
     if (e > 0x1fe)
         e = 0x1fe;
 
-    return (1 - a) * get_table_pitch_inv(e & 0x1ff) + a * get_table_pitch_inv((e + 1) & 0x1ff);
+    return (1 - a) * table_pitch_inv[e & 0x1ff] + a * table_pitch_inv[(e + 1) & 0x1ff];
 }
 
 float SurgeStorage::note_to_pitch_ignoring_tuning(float x)
@@ -1695,7 +1703,7 @@ bool SurgeStorage::retuneAndRemapToScaleAndMapping(const Tunings::Scale &s,
 void SurgeStorage::setTuningApplicationMode(const TuningApplicationMode m)
 {
     tuningApplicationMode = m;
-    if (!isStandardTuning) retuneAndRemapToScaleAndMapping(currentScale, currentMapping);
+    retuneAndRemapToScaleAndMapping(currentScale, currentMapping);
 }
 
 bool SurgeStorage::remapToKeyboard(const Tunings::KeyboardMapping &k)
@@ -1973,19 +1981,6 @@ string findReplaceSubstring(string &source, const string &from, const string &to
     return newString;
 }
 
-string makeStringVertical(string &source)
-{
-    std::ostringstream oss;
-    std::string pre = "";
-
-    for (auto c : source)
-    {
-        oss << pre << c;
-        pre = "\n";
-    }
-    return oss.str();
-}
-
 std::string appendDirectory(const std::string &root, const std::string &path1)
 {
     if (root[root.size() - 1] == PATH_SEPARATOR)
@@ -1997,11 +1992,6 @@ std::string appendDirectory(const std::string &root, const std::string &path1,
                             const std::string &path2)
 {
     return appendDirectory(appendDirectory(root, path1), path2);
-}
-std::string appendDirectory(const std::string &root, const std::string &path1,
-                            const std::string &path2, const std::string &path3)
-{
-    return appendDirectory(appendDirectory(root, path1, path2), path3);
 }
 
 } // namespace Storage

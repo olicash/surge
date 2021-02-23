@@ -79,7 +79,31 @@ extern const Surge::Skin::Color Text, TextHover;
 namespace Grid
 {
 extern const Surge::Skin::Color Border;
+
+namespace Scene
+{
+extern const Surge::Skin::Color Background, Border, Text;
 }
+namespace Unselected
+{
+extern const Surge::Skin::Color Background, Border, Text, BackgroundHover, BorderHover, TextHover;
+}
+
+namespace Selected
+{
+extern const Surge::Skin::Color Background, Border, Text, BackgroundHover, BorderHover, TextHover;
+}
+
+namespace Bypassed
+{
+extern const Surge::Skin::Color Background, Border, Text, BackgroundHover, BorderHover, TextHover;
+}
+
+namespace BypassedSelected
+{
+extern const Surge::Skin::Color Background, Border, Text, BackgroundHover, BorderHover, TextHover;
+}
+} // namespace Grid
 } // namespace Effect
 
 namespace InfoWindow
@@ -108,7 +132,7 @@ extern const Surge::Skin::Color Background, ColumnShadow, DragLine, Envelope, Tr
 
 namespace Button
 {
-extern const Surge::Skin::Color Background, Border, Hover, Arrow;
+extern const Surge::Skin::Color Background, Border, Hover, Arrow, ArrowHover;
 }
 namespace InfoWindow
 {
@@ -126,7 +150,8 @@ extern const Surge::Skin::Color Fill, FillDeactivated, FillOutside;
 } // namespace StepSeq
 namespace Waveform
 {
-extern const Surge::Skin::Color Background, Bounds, Center, Envelope, Wave, DeactivatedWave, Dots;
+extern const Surge::Skin::Color Background, Bounds, Center, Envelope, Wave, GhostedWave,
+    DeactivatedWave, Dots;
 
 namespace Ruler
 {
@@ -166,7 +191,7 @@ extern const Surge::Skin::Color Background, Border, BorderHover, Text, TextHover
 }
 namespace Macro
 {
-extern const Surge::Skin::Color Background, Fill;
+extern const Surge::Skin::Color Background, Fill, CurrentValue;
 }
 } // namespace ModSource
 
@@ -209,7 +234,7 @@ extern const Surge::Skin::Color Bounds, Center, AnimatedWave, Wave, Dots;
 }
 namespace Filename
 {
-extern const Surge::Skin::Color Background, Text;
+extern const Surge::Skin::Color Background, BackgroundHover, Frame, FrameHover, Text, TextHover;
 }
 } // namespace Osc
 

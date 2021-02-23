@@ -162,8 +162,10 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
                                                ct_decibel_fmdepth, Surge::Skin::Scene::fmdepth,
                                                sc_id, cg_GLOBAL, 0, true, sceasy));
 
-        a->push_back(scene[sc].drift.assign(p_id.next(), id_s++, "drift", "Osc Drift", ct_percent,
-                                            Surge::Skin::Scene::drift, sc_id, cg_GLOBAL, 0, true));
+        a->push_back(scene[sc].drift.assign(p_id.next(), id_s++, "drift", "Osc Drift",
+                                            ct_percent_oscdrift, Surge::Skin::Scene::drift, sc_id,
+                                            cg_GLOBAL, 0, true));
+
         a->push_back(scene[sc].noise_colour.assign(
             p_id.next(), id_s++, "noisecol", "Noise Color", ct_percent_bidirectional,
             Surge::Skin::Scene::noise_color, sc_id, cg_GLOBAL, 0, true, sceasy));
@@ -312,7 +314,7 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
                 Surge::Skin::Connector::connectorByID("filter.subtype_" + std::to_string(f + 1)),
                 sc_id, cg_FILTER, f, false));
             a->push_back(scene[sc].filterunit[f].cutoff.assign(
-                p_id.next(), id_s++, "cutoff", "Cutoff", ct_freq_audible,
+                p_id.next(), id_s++, "cutoff", "Cutoff", ct_freq_audible_with_tunability,
                 Surge::Skin::Connector::connectorByID("filter.cutoff_" + std::to_string(f + 1)),
                 sc_id, cg_FILTER, f, true, sceasy));
             if (f == 1)
@@ -478,6 +480,7 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
         if (param_ptr[i]->ctrlstyle & kEasy)
             easy_params_id.push_back(i);
     }
+
 #if 0
    // DEBUG CODE WHICH WILL DIE
    std::map<std::string, int> idToParam;
@@ -1018,13 +1021,13 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
         std::ostringstream oss;
         oss << "The version of Surge you are running is older than the version with which this "
                "patch "
-            << "was created. Your version of surge (" << Surge::Build::FullVersionStr << ") has a "
+            << "was created. Your version of Surge (" << Surge::Build::FullVersionStr << ") has a "
             << "streaming revision of " << ff_revision << ", whereas the patch you are loading was "
-            << "created with " << revision
+            << "created with streaming revision " << revision
             << ". Features of the patch will not be available in your "
             << "session. You can always find the latest Surge at "
                "https://surge-synthesizer.github.io/";
-        Surge::UserInteractions::promptError(oss.str(), "Surge Version is Older than Patch");
+        Surge::UserInteractions::promptError(oss.str(), "Surge Patch Version Mismatch");
     }
 
     TiXmlElement *meta = TINYXML_SAFE_TO_ELEMENT(patch->FirstChild("meta"));
@@ -1191,10 +1194,19 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
                 }
             }
 
-            if ((p->QueryIntAttribute("extend_range", &j) == TIXML_SUCCESS) && (j == 1))
-                param_ptr[i]->extend_range = true;
+            if (p->QueryIntAttribute("extend_range", &j) == TIXML_SUCCESS)
+            {
+                if (j == 1)
+                    param_ptr[i]->extend_range = true;
+                else
+                    param_ptr[i]->extend_range = false;
+            }
             else
+            {
                 param_ptr[i]->extend_range = false;
+                if (revision >= 16 && param_ptr[i]->ctrltype == ct_percent_oscdrift)
+                    param_ptr[i]->extend_range = true;
+            }
 
             if ((p->QueryIntAttribute("absolute", &j) == TIXML_SUCCESS) && (j == 1))
                 param_ptr[i]->absolute = true;
@@ -1259,7 +1271,15 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
 
     TiXmlElement *nonparamconfig = TINYXML_SAFE_TO_ELEMENT(patch->FirstChild("nonparamconfig"));
     // Set the default for TAM before 16
-    storage->tuningApplicationMode = SurgeStorage::RETUNE_ALL;
+    if (revision <= 15)
+    {
+        storage->tuningApplicationMode = SurgeStorage::RETUNE_ALL;
+    }
+    else
+    {
+        // We shouldn't need this since all 16s will stream it, but just in case
+        storage->tuningApplicationMode = SurgeStorage::RETUNE_MIDI_ONLY;
+    }
     if (nonparamconfig)
     {
         for (int sc = 0; sc < n_scenes; ++sc)
@@ -1519,6 +1539,7 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
             }
         }
     }
+
     // ensure that filtersubtype is a valid value
     for (auto &sc : scene)
     {
@@ -1634,6 +1655,21 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
 
     // end restore msegs
 
+    // make sure rev 15 and older patches have the locked endpoints if they were in LFO edit mode
+    if (revision < 16)
+    {
+        for (int sc = 0; sc < n_scenes; sc++)
+        {
+            for (int i = 0; i < n_lfos; i++)
+            {
+                if (msegs[sc][i].editMode == MSEGStorage::EditMode::LFO)
+                {
+                    msegs[sc][i].endpointMode = MSEGStorage::EndpointMode::LOCKED;
+                }
+            }
+        }
+    }
+
     for (int i = 0; i < n_customcontrollers; i++)
         scene[0].modsources[ms_ctrl1 + i]->reset();
 
@@ -1703,11 +1739,6 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
         {
             int ival;
             TiXmlElement *p;
-
-            // This has a lecacy name since it was from before we moved into the editor object
-            p = TINYXML_SAFE_TO_ELEMENT(de->FirstChild("instanceZoomFactor"));
-            if (p && p->QueryIntAttribute("v", &ival) == TIXML_SUCCESS)
-                dawExtraState.editor.instanceZoomFactor = ival;
 
             // This is the non-legacy way to save editor state
             p = TINYXML_SAFE_TO_ELEMENT(de->FirstChild("editor"));
@@ -1988,8 +2019,12 @@ unsigned int SurgePatch::save_xml(void **data) // allocates mem, must be freed b
 
             if (param_ptr[i]->temposync)
                 p.SetAttribute("temposync", "1");
+
             if (param_ptr[i]->extend_range)
                 p.SetAttribute("extend_range", "1");
+            else if (param_ptr[i]->can_extend_range())
+                p.SetAttribute("extend_range", "0");
+
             if (param_ptr[i]->absolute)
                 p.SetAttribute("absolute", "1");
             if (param_ptr[i]->can_deactivate())

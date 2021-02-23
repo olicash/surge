@@ -17,6 +17,7 @@
 #include "DspUtilities.h"
 #include "QuadFilterChain.h"
 #include <math.h>
+#include "libMTSClient.h"
 
 using namespace std;
 
@@ -46,8 +47,14 @@ float SurgeVoiceState::getPitch(SurgeStorage *storage)
     */
     auto res = key + /* mainChannelState->pitchBendInSemitones + */ mpeBend + detune;
 
-    if (!storage->isStandardTuning &&
-        storage->tuningApplicationMode == SurgeStorage::RETUNE_MIDI_ONLY)
+    if (storage->oddsound_mts_active)
+    {
+        auto rkey = MTS_RetuningInSemitones(storage->oddsound_mts_client, key, channel);
+
+        return res + rkey;
+    }
+    else if (!storage->isStandardTuning &&
+             storage->tuningApplicationMode == SurgeStorage::RETUNE_MIDI_ONLY)
     {
         // Then we tune here
         auto idx = (int)floor(res);
@@ -337,10 +344,11 @@ void SurgeVoice::switch_toggled()
     {
         if (osctype[i] != scene->osc[i].type.val.i)
         {
+            bool nzid = scene->drift.extend_range;
             osc[i].reset(spawn_osc(scene->osc[i].type.val.i, storage, &scene->osc[i], localcopy));
             if (osc[i])
             {
-                osc[i]->init(state.pitch);
+                osc[i]->init(state.pitch, false, nzid);
             }
             osctype[i] = scene->osc[i].type.val.i;
         }
@@ -728,6 +736,14 @@ bool SurgeVoice::process_block(QuadFilterChainState &Q, int Qe)
     clear_block(output[0], BLOCK_SIZE_OS_QUAD);
     clear_block(output[1], BLOCK_SIZE_OS_QUAD);
 
+    for (int i = 0; i < n_oscs; ++i)
+    {
+        if (osc[i])
+        {
+            osc[i]->setGate(state.gate);
+        }
+    }
+
     if (osc3 || ring23 || ((osc1 || osc2 || ring12) && (FMmode == fm_3to2to1)) ||
         ((osc1 || ring12) && (FMmode == fm_2and3to1)))
     {
@@ -1040,10 +1056,12 @@ void SurgeVoice::SetQFB(QuadFilterChainState *Q, int e) // Q == 0 means init(ial
             cutoffB += cutoffA;
 
         CM[0].MakeCoeffs(cutoffA, localcopy[id_resoa].f, scene->filterunit[0].type.val.i,
-                         scene->filterunit[0].subtype.val.i, storage);
+                         scene->filterunit[0].subtype.val.i, storage,
+                         scene->filterunit[0].cutoff.extend_range);
         CM[1].MakeCoeffs(
             cutoffB, scene->f2_link_resonance.val.b ? localcopy[id_resoa].f : localcopy[id_resob].f,
-            scene->filterunit[1].type.val.i, scene->filterunit[1].subtype.val.i, storage);
+            scene->filterunit[1].type.val.i, scene->filterunit[1].subtype.val.i, storage,
+            scene->filterunit[1].cutoff.extend_range);
 
         for (int u = 0; u < n_filterunits_per_scene; u++)
         {

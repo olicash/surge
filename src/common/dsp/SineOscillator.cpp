@@ -62,7 +62,7 @@ void SineOscillator::prepare_unison(int voices)
     }
 }
 
-void SineOscillator::init(float pitch, bool is_display)
+void SineOscillator::init(float pitch, bool is_display, bool nonzero_init_drift)
 {
     n_unison = limit_range(oscdata->p[sine_unison_voices].val.i, 1, MAX_UNISON);
 
@@ -79,7 +79,9 @@ void SineOscillator::init(float pitch, bool is_display)
             (oscdata->retrigger.val.b || is_display) ? 0.f : 2.0 * M_PI * rand() / RAND_MAX - M_PI;
         lastvalue[i] = 0.f;
         driftlfo[i] = 0.f;
-        driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
+        driftlfo2[i] = 0.f;
+        if (nonzero_init_drift)
+            driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
         sine[i].set_phase(phase[i]);
     }
 
@@ -657,7 +659,7 @@ void SineOscillator::init_default_values()
     oscdata->p[sine_highcut].val.f = oscdata->p[sine_highcut].val_max.f; // low cut at the top
     oscdata->p[sine_highcut].deactivated = true;
 
-    oscdata->p[sine_unison_detune].val.f = 0.2;
+    oscdata->p[sine_unison_detune].val.f = 0.1;
     oscdata->p[sine_unison_voices].val.i = 1;
 }
 

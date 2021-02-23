@@ -67,7 +67,48 @@ const Surge::Skin::Color Text("effect.menu.text", 0, 0, 0),
 namespace Grid
 {
 const Surge::Skin::Color Border("effect.grid.border", 0, 0, 0);
+
+namespace Scene
+{
+const Surge::Skin::Color Background("effect.grid.scene.background", 255, 255, 255),
+    Border("effect.grid.scene.border", 0, 0, 0), Text("effect.grid.scene.text", 0, 0, 0);
 }
+namespace Unselected
+{
+const Surge::Skin::Color Background("effect.grid.unselected.background", 151, 151, 151),
+    Border("effect.grid.unselected.border", 0, 0, 0),
+    Text("effect.grid.unselected.text", 255, 255, 255),
+    BackgroundHover("effect.grid.unselected.background.hover", 192, 192, 192),
+    BorderHover("effect.grid.unselected.border.hover", 0, 0, 0),
+    TextHover("effect.grid.unselected.text.hover", 255, 255, 255);
+}
+namespace Selected
+{
+const Surge::Skin::Color Background("effect.grid.selected.background", 255, 255, 255),
+    Border("effect.grid.selected.border", 0, 0, 0), Text("effect.grid.selected.text", 32, 32, 32),
+    BackgroundHover("effect.grid.selected.background.hover", 192, 192, 192),
+    BorderHover("effect.grid.selected.border.hover", 0, 0, 0),
+    TextHover("effect.grid.selected.text.hover", 32, 32, 32);
+}
+namespace Bypassed
+{
+const Surge::Skin::Color Background("effect.grid.bypassed.background", 57, 59, 69),
+    Border("effect.grid.bypassed.border", 0, 0, 0),
+    Text("effect.grid.bypassed.text", 151, 151, 151),
+    BackgroundHover("effect.grid.bypassed.background.hover", 96, 98, 108),
+    BorderHover("effect.grid.bypassed.border.hover", 0, 0, 0),
+    TextHover("effect.grid.bypassed.text.hover", 151, 151, 151);
+}
+namespace BypassedSelected
+{
+const Surge::Skin::Color Background("effect.grid.bypassed.selected.background", 57, 59, 69),
+    Border("effect.grid.bypassed.selected.border", 0, 0, 0),
+    Text("effect.grid.bypassed.selected.text", 255, 255, 255),
+    BackgroundHover("effect.grid.bypassed.selected.background.hover", 96, 98, 108),
+    BorderHover("effect.grid.bypassed.selected.border.hover", 0, 0, 0),
+    TextHover("effect.grid.bypassed.selected.text.hover", 151, 151, 151);
+}
+} // namespace Grid
 } // namespace Effect
 
 namespace InfoWindow
@@ -107,10 +148,10 @@ const Surge::Skin::Color Background("lfo.stepseq.background", 255, 144, 0),
 
 namespace Button
 {
-const Surge::Skin::Color Background("lfo.stepseq.button.background", 151, 152, 154),
-    Border("lfo.stepseq.button.border", 93, 93, 93),
-    Hover("lfo.stepseq.button.hover", 174, 175, 190),
-    Arrow("lfo.stepseq.button.arrow", 255, 255, 255);
+const Surge::Skin::Color Background("lfo.stepseq.button.background", 227, 227, 227),
+    Border("lfo.stepseq.button.border", 151, 151, 151),
+    Hover("lfo.stepseq.button.hover", 241, 187, 114), Arrow("lfo.stepseq.button.arrow", 0, 0, 0),
+    ArrowHover("lfo.stepseq.button.arrow.hover", 0, 0, 0);
 }
 namespace InfoWindow
 {
@@ -138,7 +179,8 @@ const Surge::Skin::Color Background("lfo.waveform.background", 255, 144, 0),
     Bounds("lfo.waveform.bounds", 224, 128, 0), Center("lfo.waveform.center", 224, 128, 0),
     Dots("lfo.waveform.dots", 192, 112, 0), Envelope("lfo.waveform.envelope", 176, 96, 0),
     Wave("lfo.waveform.wave", 0, 0, 0),
-    DeactivatedWave("lfo.waveform.wave.deactivated", 0, 0, 0, 144);
+    DeactivatedWave("lfo.waveform.wave.deactivated", 0, 0, 0, 96),
+    GhostedWave("lfo.waveform.wave.ghosted", 0, 0, 0, 96);
 
 namespace Ruler
 {
@@ -210,7 +252,8 @@ const Surge::Skin::Color Background("modbutton.armed.fill", 116, 172, 72),
 namespace Macro
 {
 const Surge::Skin::Color Background("modbutton.macro.slider.background", 32, 93, 176),
-    Fill("modbutton.macro.slider.fill", 46, 134, 254);
+    Fill("modbutton.macro.slider.fill", 46, 134, 254),
+    CurrentValue("modbutton.macro.slider.currentvalue", 255, 144, 0);
 
 }
 } // namespace ModSource
@@ -271,7 +314,9 @@ const Surge::Skin::Color Bounds("osc.line.bounds", 70, 70, 70),
 namespace Filename
 {
 const Surge::Skin::Color Background("osc.wavename.background", 255, 160, 16),
-    Text("osc.wavename.text", 0, 0, 0);
+    BackgroundHover("osc.wavename.background.hover", 255, 160, 16),
+    Frame("osc.wavename.frame", 255, 160, 16), FrameHover("osc.wavename.frame.hover", 255, 160, 16),
+    Text("osc.wavename.text", 0, 0, 0), TextHover("osc.wavename.text.hover", 255, 255, 255);
 }
 } // namespace Osc
 

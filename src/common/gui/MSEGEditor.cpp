@@ -619,8 +619,7 @@ struct MSEGCanvas : public CControl,
                     hotzone::SEGMENT_ENDPOINT,
                     [this, vscale, tscale, unipolarFactor](float dx, float dy,
                                                            const CPoint &where) {
-                        if (ms->endpointMode == MSEGStorage::EndpointMode::FREE &&
-                            ms->editMode != MSEGStorage::LFO)
+                        if (ms->endpointMode == MSEGStorage::EndpointMode::FREE)
                         {
                             float d = -2 * dy / vscale;
                             float snapResolution = ms->vSnap * unipolarFactor;
@@ -1123,13 +1122,14 @@ struct MSEGCanvas : public CControl,
             false; // this slightly odd construct means we always draw beyond the last point
         int priorEval = 0;
 
-        for (int q = 0; q < drawArea.getWidth(); ++q)
+        for (int q = 0; q <= drawArea.getWidth(); ++q)
         {
             float up = pxt(q + drawArea.left);
             int i = q;
             if (!drawnLast)
             {
                 float iup = (int)up;
+
                 float fup = up - iup;
                 float v = Surge::MSEG::valueAt(iup, fup, 0, ms, &es, true);
                 float vdef = Surge::MSEG::valueAt(iup, fup, lfodata->deform.val.f, ms, &esdf, true);
@@ -1143,7 +1143,7 @@ struct MSEGCanvas : public CControl,
                     vdef = v;
 
                 int compareWith = es.lastEval;
-                if (up > ms->totalDuration)
+                if (up >= ms->totalDuration)
                     compareWith = ms->n_activeSegments - 1;
 
                 if (compareWith != priorEval)
@@ -1168,6 +1168,9 @@ struct MSEGCanvas : public CControl,
                 if (es.lastEval == hoveredSegment)
                 {
                     bool skipThisAdd = false;
+                    // edge case when you go exactly up to 1 evenly. See #3940
+                    if (up < ms->segmentStart[es.lastEval] || up > ms->segmentEnd[es.lastEval])
+                        skipThisAdd = true;
                     if (!hlpathUsed)
                     {
                         // We always want to hit the start
@@ -2356,9 +2359,7 @@ struct MSEGCanvas : public CControl,
                         modelChanged();
                     }
                 });
-            cm->setChecked(this->ms->endpointMode == MSEGStorage::EndpointMode::LOCKED ||
-                           this->ms->editMode == MSEGStorage::LFO);
-            cm->setEnabled(this->ms->editMode != MSEGStorage::LFO);
+            cm->setChecked(ms->endpointMode == MSEGStorage::EndpointMode::LOCKED);
 
             settingsMenu->addSeparator();
 
@@ -2859,6 +2860,7 @@ void MSEGControlRegion::rebuild()
          */
         auto hsrect = CRect(CPoint(xpos + 52 + margin, ypos), CPoint(editWidth, numfieldHeight));
         auto cnfSkinCtrl = std::make_shared<Surge::UI::Skin::Control>();
+        cnfSkinCtrl->defaultComponent = Surge::Skin::Components::NumberField;
         cnfSkinCtrl->allprops["bg_id"] = std::to_string(IDB_MSEG_SNAPVALUE_NUMFIELD);
         cnfSkinCtrl->allprops["text_color"] = Colors::MSEGEditor::NumberField::Text.name;
         cnfSkinCtrl->allprops["text_color.hover"] = Colors::MSEGEditor::NumberField::TextHover.name;

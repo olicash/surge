@@ -64,6 +64,7 @@ enum ctrltypes
     ct_decibel_deactivatable,
     ct_freq_audible,
     ct_freq_audible_deactivatable,
+    ct_freq_audible_with_tunability, // we abuse 'extended' to mean 'use SCL tunign'
     ct_freq_audible_with_very_low_lowerbound,
     ct_freq_mod,
     ct_freq_hpf,
@@ -123,7 +124,7 @@ enum ctrltypes
     ct_distortion_waveshape,
     ct_flangerpitch,
     ct_flangermode,
-    ct_flangerwave,
+    ct_fxlfowave,
     ct_flangervoices,
     ct_flangerspacing,
     ct_osc_feedback,
@@ -157,6 +158,9 @@ enum ctrltypes
     ct_comp_attack_ms,
     ct_comp_release_ms,
     ct_freq_ringmod,
+    ct_dpw_trimix,
+    ct_percent_oscdrift,
+    ct_waveguide_excitation_model,
     num_ctrltypes,
 };
 
@@ -203,6 +207,12 @@ struct ParameterDiscreteIndexRemapper : public ParamUserData
 
     virtual bool supportsTotalIndexOrdering() { return false; }
     virtual const std::vector<int> totalIndexOrdering() { return std::vector<int>(); }
+};
+
+class Parameter;
+struct ParameterDynamicNameFunction
+{
+    virtual const char *getName(Parameter *p) = 0;
 };
 
 /*
@@ -420,6 +430,8 @@ class Parameter
 
         float modulationCap = -1.f;
 
+        bool supportsNoteName = false;
+
         float extendFactor = 1.0,
               absoluteFactor = 1.0; // set these to 1 in case we sneak by and divide by accident
     } displayInfo;
@@ -427,6 +439,9 @@ class Parameter
     ParamUserData *user_data = nullptr;    // I know this is a bit gross but we have a runtime type
     void set_user_data(ParamUserData *ud); // I take a shallow copy and don't assume ownership and
                                            // assume i am referencable
+
+    bool supportsDynamicName();
+    ParameterDynamicNameFunction *dynamicName = nullptr;
 
     bool hasSkinConnector = false;
 

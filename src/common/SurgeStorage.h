@@ -35,7 +35,6 @@
 #include <map>
 
 #include "Tunings.h"
-#include "libMTSClient.h"
 
 #if WINDOWS
 #define PATH_SEPARATOR '\\'
@@ -194,16 +193,22 @@ enum osc_type
     ot_wavetable,
     ot_shnoise,
     ot_audioinput,
-    ot_FM3, // it used to be just FM, then the UI called it FM3, so name it like this, but the order
-            // of enums has to stick
+    ot_FM3, // used to be just FM (FM3 on GUI), so name it like this, but enum order has to stick
     ot_FM2,
     ot_window,
+    ot_dpw,
+    ot_waveguide,
+    // ot_macro,
+    // ot_phasedist,
+    // ot_chaos,
+    // ot_FM4,
 
     n_osc_types,
 };
-const char osc_type_names[n_osc_types][16] = {
-    "Classic", "Sine", "Wavetable", "S&H Noise", "Audio In", "FM3", "FM2", "Window",
-};
+
+const char osc_type_names[n_osc_types][24] = {
+    "Classic", "Sine",   "Wavetable", "S&H Noise", "Audio In",         "FM3",   "FM2",
+    "Window",  "Modern", "Waveguide" /*, "Pluck",     "Macro",     "Phase Distortion", "Chaos", "FM4"*/};
 
 const char window_names[9][16] = {
     "Triangle", "Cosine", "Blend 1", "Blend 2",   "Blend 3",
@@ -263,6 +268,7 @@ enum fx_type
     fxt_ensemble,
     fxt_combulator,
     fxt_nimbus,
+    fxt_tape,
 
     n_fx_types,
 };
@@ -272,6 +278,11 @@ const char fx_type_names[n_fx_types][16] = {
     "EQ",      "Freq Shift", "Conditioner", "Chorus",     "Vocoder",    "Reverb 2",
     "Flanger", "Ring Mod",   "Airwindows",  "Neuron",     "Graphic EQ", "Resonator",
     "CHOW",    "Exciter",    "Ensemble",    "Combulator", "Nimbus",
+};
+
+const char fx_type_shortnames[n_fx_types][8] = {
+    "-",  "DLY", "RV1", "PH",  "ROT", "DIST", "EQ",  "FRQ", "DYN", "CH",  "VOC", "RV2",
+    "FL", "RM",  "AW",  "NEU", "GEQ", "RES",  "CHW", "XCT", "ENS", "CMB", "NIM",
 };
 
 enum fx_bypass
@@ -429,7 +440,7 @@ enum MonoVoicePriorityMode
 struct MidiKeyState
 {
     int keystate;
-    float lastdetune;
+    char lastdetune;
     int64_t voiceOrder;
 };
 
@@ -811,6 +822,8 @@ enum surge_copysource
     n_copysources,
 };
 
+class MTSClient;
+
 /* storage layer */
 
 class alignas(16) SurgeStorage
@@ -909,18 +922,6 @@ class alignas(16) SurgeStorage
     std::recursive_mutex modRoutingMutex;
     Wavetable WindowWT;
 
-    inline float get_table_pitch(int x)
-    {
-        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
-            return table_pitch[x & 0x1ff] * MTS_RetuningAsRatio(mtsclient, (x & 0x1ff) - 256, -1);
-        return table_pitch[x & 0x1ff];
-    }
-    inline float get_table_pitch_inv(int x)
-    {
-        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
-            return table_pitch_inv[x & 0x1ff] / MTS_RetuningAsRatio(mtsclient, (x & 0x1ff) - 256, -1);
-        return table_pitch_inv[x & 0x1ff];
-    }
     float note_to_pitch(float x);
     float note_to_pitch_inv(float x);
     float note_to_pitch_ignoring_tuning(float x);
@@ -941,6 +942,7 @@ class alignas(16) SurgeStorage
     bool retuneToStandardTuning()
     {
         init_tables();
+        currentTuning = twelveToneStandardMapping;
         return true;
     }
 
@@ -952,40 +954,44 @@ class alignas(16) SurgeStorage
 
     inline int scaleConstantNote()
     {
-        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
-            return MTS_GetRefKey(mtsclient);
-        return currentMapping.tuningConstantNote;
+        if (tuningApplicationMode == RETUNE_ALL)
+        {
+            return currentMapping.tuningConstantNote;
+        }
+        else
+        {
+            /*
+             * In this case the mapping happens at the keyboard layer so
+             * don't double-retune it
+             */
+            return 60;
+        }
     }
-    inline float scaleConstantPitch()
-    {
-        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
-            return MTS_NoteToFrequency(mtsclient, MTS_GetRefKey(mtsclient), -1) / Tunings::MIDI_0_FREQ;
-        return tuningPitch;
-    }
+    inline float scaleConstantPitch() { return tuningPitch; }
     inline float scaleConstantPitchInv()
     {
-        if (isStandardTuning && tuningApplicationMode == RETUNE_ALL && MTS_HasMaster(mtsclient))
-            return Tunings::MIDI_0_FREQ / MTS_NoteToFrequency(mtsclient, MTS_GetRefKey(mtsclient), -1);
         return tuningPitchInv;
     } // Obviously that's the inverse of the above
 
     Tunings::Scale currentScale;
     Tunings::Tuning twelveToneStandardMapping;
     Tunings::Tuning currentTuning;
-    
-    MTSClient *mtsclient;
 
     bool isStandardTuning;
     enum TuningApplicationMode
     {
         RETUNE_ALL = 0, // These values are streamed so don't change them if you add
         RETUNE_MIDI_ONLY = 1
-    } tuningApplicationMode = RETUNE_ALL;
+    } tuningApplicationMode = RETUNE_MIDI_ONLY; // This is the default as of 1.9/sv16
     void setTuningApplicationMode(const TuningApplicationMode m);
 
     Tunings::KeyboardMapping currentMapping;
     bool isStandardMapping = true;
     float tuningPitch = 32.0f, tuningPitchInv = 0.03125f;
+
+    MTSClient *oddsound_mts_client = nullptr;
+    std::atomic<bool> oddsound_mts_active;
+    uint32_t oddsound_mts_on_check = 0;
 
     ControllerModulationSource::SmoothingMode smoothingMode =
         ControllerModulationSource::SmoothingMode::LEGACY;
@@ -1039,13 +1045,10 @@ bool isValidUTF8(const std::string &testThis);
 
 std::string findReplaceSubstring(std::string &source, const std::string &from,
                                  const std::string &to);
-std::string makeStringVertical(std::string &source);
 
 std::string appendDirectory(const std::string &root, const std::string &path1);
 std::string appendDirectory(const std::string &root, const std::string &path1,
                             const std::string &path2);
-std::string appendDirectory(const std::string &root, const std::string &path1,
-                            const std::string &path2, const std::string &path3);
 } // namespace Storage
 } // namespace Surge
 

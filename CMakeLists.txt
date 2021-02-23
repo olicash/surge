@@ -29,6 +29,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(
     -Wno-multichar
 
+    # Targetting Windows with GCC/Clang is experimental
+    $<$<NOT:$<BOOL:${WIN32}>>:-Werror>
+
     # PE/COFF doesn't support visibility
     $<$<NOT:$<BOOL:${WIN32}>>:-fvisibility=hidden>
     $<$<NOT:$<BOOL:${WIN32}>>:-fvisibility-inlines-hidden>
@@ -47,7 +50,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Any Clang
     add_compile_options(
-      -Werror
       -Wno-deprecated-declarations
       -Werror=inconsistent-missing-override
       -Werror=logical-op-parentheses
@@ -64,9 +66,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "^GNU$")
     # GCC only
-    add_compile_options(
-      -Werror
-    )
   endif()
 endif()
 
@@ -110,7 +109,8 @@ file(MAKE_DIRECTORY ${SURGE_PRODUCT_DIR})
 
 include(cmake/stage-extra-content.cmake)
 
-add_library(surge-shared src/common/FilterConfiguration.h src/common/dsp/effect/NimbusEffect.cpp)
+add_library(surge-shared)
+
 add_library(surge-tests INTERFACE)
 
 add_subdirectory(libs/airwindows)
@@ -119,22 +119,27 @@ add_subdirectory(libs/eurorack)
 add_subdirectory(libs/filesystem)
 add_subdirectory(libs/tinyxml)
 add_subdirectory(libs/escape-from-vstgui)
+add_subdirectory(libs/oddsound-mts)
 
 target_link_libraries(surge-shared PUBLIC
   surge::airwindows
   surge::eurorack
   surge::filesystem
   surge::tinyxml
+  surge::oddsound-mts
 )
 
 # We want to run this once alas, since JUCE needs it even though it is a byproduct of a phase to build the
 # JUCE Cmake file list.
+set(SURGE_COMPILER_INFO "${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}")
 execute_process(
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} -D PROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}  -D PROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
                            -D SURGESRC=${CMAKE_SOURCE_DIR} -D SURGEBLD=${CMAKE_BINARY_DIR}
                            -D AZURE_PIPELINE=${AZURE_PIPELINE}
                            -D WIN32=${WIN32}
+                           -D CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+                           -D SURGE_COMPILER_INFO="${SURGE_COMPILER_INFO}"
                            -P ${CMAKE_SOURCE_DIR}/cmake/versiontools.cmake
                            )
 add_custom_target( git-info BYPRODUCTS ${CMAKE_BINARY_DIR}/geninclude/version.cpp
@@ -143,6 +148,8 @@ add_custom_target( git-info BYPRODUCTS ${CMAKE_BINARY_DIR}/geninclude/version.cp
                            -D SURGESRC=${CMAKE_SOURCE_DIR} -D SURGEBLD=${CMAKE_BINARY_DIR}
                            -D AZURE_PIPELINE=${AZURE_PIPELINE}
                            -D WIN32=${WIN32}
+                           -D CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+                           -D SURGE_COMPILER_INFO="${SURGE_COMPILER_INFO}"
                            -P ${CMAKE_SOURCE_DIR}/cmake/versiontools.cmake
                            )
 add_dependencies( surge-shared git-info )
@@ -205,6 +212,7 @@ endif()
 #    SURGE_(os)_SOURCES
 
 set(SURGE_SHARED_SOURCES
+  src/common/dsp/effect/BBDEnsembleEffect.cpp
   src/common/dsp/effect/ChorusEffectImpl.h
   src/common/dsp/effect/CombulatorEffect.cpp
   src/common/dsp/effect/ConditionerEffect.cpp
@@ -215,6 +223,7 @@ set(SURGE_SHARED_SOURCES
   src/common/dsp/effect/FreqshiftEffect.cpp
   src/common/dsp/effect/FlangerEffect.cpp
   src/common/dsp/effect/GEQ11Effect.cpp
+  src/common/dsp/effect/NimbusEffect.cpp
   src/common/dsp/effect/PhaserEffect.cpp
   src/common/dsp/effect/ResonatorEffect.cpp
   src/common/dsp/effect/Reverb1Effect.cpp
@@ -227,6 +236,10 @@ set(SURGE_SHARED_SOURCES
   src/common/dsp/effect/chowdsp/Chow.cpp
   src/common/dsp/effect/chowdsp/exciter/Exciter.cpp
   src/common/dsp/effect/chowdsp/exciter/LevelDetector.cpp
+  src/common/dsp/effect/chowdsp/tape/HysteresisProcessing.cpp
+  src/common/dsp/effect/chowdsp/tape/HysteresisProcessor.cpp
+  src/common/dsp/effect/chowdsp/tape/LossFilter.cpp
+  src/common/dsp/effect/chowdsp/tape/Tape.cpp
   src/common/dsp/effect/chowdsp/Neuron.cpp
   src/common/dsp/effect/chowdsp/shared/DelayLine.cpp
   src/common/dsp/filters/VintageLadders.cpp
@@ -238,6 +251,7 @@ set(SURGE_SHARED_SOURCES
   src/common/dsp/AudioInputOscillator.cpp
   src/common/dsp/BiquadFilter.cpp
   src/common/dsp/BiquadFilterSSE2.cpp
+  src/common/dsp/DPWOscillator.cpp
   src/common/dsp/DspUtilities.cpp
   src/common/dsp/FilterCoefficientMaker.cpp
   src/common/dsp/FM2Oscillator.cpp
@@ -252,6 +266,7 @@ set(SURGE_SHARED_SOURCES
   src/common/dsp/SurgeSuperOscillator.cpp
   src/common/dsp/SurgeVoice.cpp
   src/common/dsp/VectorizedSvfFilter.cpp
+  src/common/dsp/WaveguideOscillator.cpp
   src/common/dsp/Wavetable.cpp
   src/common/dsp/WavetableOscillator.cpp
   src/common/dsp/WindowOscillator.cpp
@@ -263,8 +278,6 @@ set(SURGE_SHARED_SOURCES
   src/common/DebugHelpers.cpp
   # src/common/DeferredAssetLoader.cpp
   src/common/Parameter.cpp
-  src/common/precompiled.cpp
-  src/common/SurgeError.cpp
   src/common/SurgePatch.cpp
   src/common/SurgeStorage.cpp
   src/common/UserDefaults.cpp
@@ -578,10 +591,6 @@ elseif( UNIX AND NOT APPLE )
     endif()
 
 elseif( WIN32 )
-
-  set(SURGE_OS_SOURCES
-    src/windows/surge_win_fopen_utf8.cpp
-    )
 
   set(SURGE_OS_GUI_SOURCES
     src/windows/DisplayInfoWin.cpp
@@ -983,7 +992,9 @@ if( BUILD_LV2 )
       COMMAND echo "Packaging up LV2 component"
       COMMAND ${CMAKE_COMMAND} -E make_directory ${SURGE_PRODUCT_DIR}/Surge.lv2
       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:surge-lv2-dll> ${SURGE_PRODUCT_DIR}/Surge.lv2/Surge.so
-      COMMAND scripts/linux/generate-lv2-ttl ${SURGE_PRODUCT_DIR}/Surge.lv2/Surge.so
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/lintemp
+      COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_SOURCE_DIR}/resources/data ${CMAKE_BINARY_DIR}/lintemp/surge
+      COMMAND XDG_DATA_HOME=${CMAKE_BINARY_DIR}/lintemp scripts/linux/generate-lv2-ttl ${SURGE_PRODUCT_DIR}/Surge.lv2/Surge.so
       )
   endif()
 
@@ -1445,6 +1456,8 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             PLUGIN_MANUFACTURER_CODE VmbA
             PLUGIN_CODE SgXT
 
+            ICON_BIG "resources/surge-xt/SurgeLogo.png"
+
             IS_SYNTH TRUE
             NEEDS_MIDI_INPUT TRUE
             NEEDS_MIDI_OUTPUT FALSE
@@ -1518,6 +1531,7 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
 
             juce::juce_audio_utils
             juce::juce_audio_processors
+            juce::juce_audio_plugin_client
 
             escape-from-vstgui
 
@@ -1538,10 +1552,6 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             TARGET_JUCE_SYNTH=1
             TARGET_HEADLESS=1
             TARGET_JUCE_UI=1)
-
-    if( WIN32 )
-      target_compile_options(surge-xt PRIVATE /FIprecompiled.h)
-    endif()
 
     add_dependencies(surge-juce-pipeline-targets surge-xt_Standalone)
 
@@ -1634,22 +1644,6 @@ if( ${BUILD_SURGE_PYTHON_BINDINGS} )
 else()
   message( STATUS "Python bindings disabled" )
 endif()
-
-
-
-# Hack: For now, native Windows binaries need implicit globals.h.
-# This can't go into the global compile options, so tack it on here.
-if(MSVC)
-  get_property(targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-  foreach(target ${targets})
-    get_target_property(target_type ${target} TYPE)
-    if (target_type MATCHES "EXECUTABLE|SHARED_LIBRARY")
-      target_compile_options(${target} PRIVATE /FIprecompiled.h)
-    endif()
-  endforeach()
-  target_compile_options( surge-shared PRIVATE /FIprecompiled.h )
-endif()
-
 
 # We have a special target here which the PR pipeline uses to make sure things
 # are of the appropriate code quality. This allows us to write CMAKE rules which

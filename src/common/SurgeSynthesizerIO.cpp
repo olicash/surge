@@ -20,6 +20,7 @@
 
 #include "filesystem/import.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include "UserInteractions.h"
@@ -55,11 +56,14 @@ struct fxChunkSetCustom
     // char chunk[8]; // variable
 };
 
-void SurgeSynthesizer::incrementPatch(bool nextPrev)
+void SurgeSynthesizer::incrementPatch(bool nextPrev, bool insideCategory)
 {
-    int n = storage.patch_list.size();
-    if (!n)
+    int p = storage.patch_list.size();
+
+    if (!p)
+    {
         return;
+    }
 
     /*
     ** Ideally we would never call this with an out
@@ -68,12 +72,12 @@ void SurgeSynthesizer::incrementPatch(bool nextPrev)
     ** false, as may some other cases. So add this
     ** defensive approach. See #319
     */
-    if (patchid < 0 || patchid > n - 1)
+    if (patchid < 0 || patchid > p - 1)
     {
         // Find patch 0 category 0 and select it
         int ccid = storage.patchCategoryOrdering[0];
 
-        int target = n + 1;
+        int target = p + 1;
         for (auto &patch : storage.patch_list)
         {
             if (patch.category == ccid && patch.order < target)
@@ -87,21 +91,47 @@ void SurgeSynthesizer::incrementPatch(bool nextPrev)
     {
         int order = storage.patch_list[patchid].order;
         int category = storage.patch_list[patchid].category;
+        int currentPatchId;
+        vector<int> patchesInCategory;
 
-        if (nextPrev)
+        // get all patches belonging to current category
+        for (auto i : storage.patchOrdering)
         {
-            do
+            if (storage.patch_list[i].category == category)
             {
-                order = (order >= (n - 1)) ? 0 : order + 1;
-            } while (storage.patch_list[storage.patchOrdering[order]].category != category);
+                patchesInCategory.push_back(i);
+                if (storage.patch_list[i].order == order)
+                {
+                    currentPatchId = i;
+                }
+            }
         }
-        else
+
+        int np = nextPrev == true ? 1 : -1;
+        int numPatches = patchesInCategory.size();
+
+        do
         {
-            do
+            if (nextPrev)
             {
-                order = (order <= 0) ? n - 1 : order - 1;
-            } while (storage.patch_list[storage.patchOrdering[order]].category != category);
-        }
+                if (!insideCategory && order >= p - 1)
+                {
+                    incrementCategory(nextPrev);
+                    category = current_category_id;
+                }
+                order = (order >= p - 1) ? 0 : order + 1;
+            }
+            else
+            {
+                if (!insideCategory && order <= 0)
+                {
+                    incrementCategory(nextPrev);
+                    category = current_category_id;
+                }
+                order = (order <= 0) ? p - 1 : order - 1;
+            }
+        } while (storage.patch_list[storage.patchOrdering[order]].category != category);
+
         patchid_queue = storage.patchOrdering[order];
     }
     processThreadunsafeOperations();
@@ -110,12 +140,13 @@ void SurgeSynthesizer::incrementPatch(bool nextPrev)
 
 void SurgeSynthesizer::incrementCategory(bool nextPrev)
 {
-    int n = storage.patch_category.size();
-    if (!n)
+    int c = storage.patch_category.size();
+
+    if (!c)
         return;
 
     // See comment above and #319
-    if (current_category_id < 0 || current_category_id > n - 1)
+    if (current_category_id < 0 || current_category_id > c - 1)
     {
         current_category_id = storage.patchCategoryOrdering[0];
     }
@@ -126,9 +157,9 @@ void SurgeSynthesizer::incrementCategory(bool nextPrev)
         do
         {
             if (nextPrev)
-                order = (order >= (n - 1)) ? 0 : order + 1;
+                order = (order >= (c - 1)) ? 0 : order + 1;
             else
-                order = (order <= 0) ? n - 1 : order - 1;
+                order = (order <= 0) ? c - 1 : order - 1;
 
             current_category_id = storage.patchCategoryOrdering[order];
         } while (storage.patch_category[current_category_id].numberOfPatchesInCatgory == 0 &&
@@ -164,16 +195,16 @@ void SurgeSynthesizer::loadPatch(int id)
 
 bool SurgeSynthesizer::loadPatchByPath(const char *fxpPath, int categoryId, const char *patchName)
 {
-    FILE *f = fopen(fxpPath, "rb");
-    if (!f)
+    std::filebuf f;
+    if (!f.open(string_to_path(fxpPath), std::ios::binary | std::ios::in))
         return false;
     fxChunkSetCustom fxp;
-    auto read = fread(&fxp, sizeof(fxChunkSetCustom), 1, f);
+    auto read = f.sgetn(reinterpret_cast<char *>(&fxp), sizeof(fxp));
     // FIXME - error if read != chunk size
     if ((vt_read_int32BE(fxp.chunkMagic) != 'CcnK') || (vt_read_int32BE(fxp.fxMagic) != 'FPCh') ||
         (vt_read_int32BE(fxp.fxID) != 'cjs3'))
     {
-        fclose(f);
+        f.close();
         auto cm = vt_read_int32BE(fxp.chunkMagic);
         auto fm = vt_read_int32BE(fxp.fxMagic);
         auto id = vt_read_int32BE(fxp.fxID);
@@ -205,13 +236,10 @@ bool SurgeSynthesizer::loadPatchByPath(const char *fxpPath, int categoryId, cons
     }
 
     int cs = vt_read_int32BE(fxp.chunkSize);
-    void *data = malloc(cs);
-    assert(data);
-    size_t actual_cs = fread(data, 1, cs, f);
-    int error = ferror(f);
-    if (error)
+    std::unique_ptr<char[]> data{new char[cs]};
+    if (f.sgetn(data.get(), cs) != cs)
         perror("Error while loading patch!");
-    fclose(f);
+    f.close();
 
     storage.getPatch().comment = "";
     storage.getPatch().author = "";
@@ -226,8 +254,8 @@ bool SurgeSynthesizer::loadPatchByPath(const char *fxpPath, int categoryId, cons
     current_category_id = categoryId;
     storage.getPatch().name = patchName;
 
-    loadRaw(data, cs, true);
-    free(data);
+    loadRaw(data.get(), cs, true);
+    data.reset();
 
     /*
     ** OK so at this point we may have loaded a patch with a tuning override
@@ -393,35 +421,42 @@ void SurgeSynthesizer::savePatch()
         storage.getPatch().category = "Default";
 
     fs::path savepath = string_to_path(getUserPatchDirectory());
-    savepath /= (string_to_path(storage.getPatch().category));
 
-    create_directories(savepath);
-
-    string legalname = storage.getPatch().name;
-    for (int i = 0; i < legalname.length(); i++)
+    try
     {
-        switch (legalname[i])
+        std::string tempCat = storage.getPatch().category;
+#if WINDOWS
+        if (tempCat[0] == '\\' || tempCat[0] == '/')
         {
-        case '<':
-            legalname[i] = '[';
-            break;
-        case '>':
-            legalname[i] = ']';
-            break;
-        case '*':
-        case '?':
-        case '"':
-        case '\\':
-        case '|':
-        case '/':
-        case ':':
-            legalname[i] = ' ';
-            break;
+            tempCat.erase(0, 1);
         }
+#endif
+
+        fs::path catPath = (string_to_path(tempCat));
+
+        if (!catPath.is_relative())
+        {
+            Surge::UserInteractions::promptError(
+                "Please use relative paths when saving patches. Referring to drive names directly "
+                "and using absolute paths is not allowed!",
+                "Error");
+            return;
+        }
+
+        savepath /= catPath;
+        create_directories(savepath);
+    }
+    catch (...)
+    {
+        Surge::UserInteractions::promptError(
+            "Exception occured while creating category folder! Most likely, invalid characters "
+            "were used to name the category. Please remove suspicious characters and try again!",
+            "Error");
+        return;
     }
 
     fs::path filename = savepath;
-    filename /= string_to_path(legalname + ".fxp");
+    filename /= string_to_path(storage.getPatch().name + ".fxp");
 
     bool checkExists = true;
 #if LINUX
@@ -443,8 +478,14 @@ void SurgeSynthesizer::savePatch()
 void SurgeSynthesizer::savePatchToPath(fs::path filename)
 {
     std::ofstream f(filename, std::ios::out | std::ios::binary);
+
     if (!f)
+    {
+        Surge::UserInteractions::promptError(
+            "Unable to save the patch to the specified path! Maybe it contains invalid characters?",
+            "Error");
         return;
+    }
 
     fxChunkSetCustom fxp;
     fxp.chunkMagic = vt_write_int32BE('CcnK');

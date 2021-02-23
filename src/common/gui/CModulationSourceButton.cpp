@@ -2,6 +2,7 @@
 #include "CSurgeSlider.h"
 #include "MouseCursorControl.h"
 #include "globals.h"
+#include "guihelpers.h"
 #include "ModulationSource.h"
 #include "CScalableBitmap.h"
 #include "SurgeBitmaps.h"
@@ -227,10 +228,14 @@ void CModulationSourceButton::draw(CDrawContext *dc)
         mrect.top++;
         mrect.bottom--;
         mrect.right--;
+
         dc->setFillColor(skin->getColor(Colors::ModSource::Used::Background));
         dc->drawRect(mrect, kDrawFilled);
+
         CRect brect(mrect);
         brect.inset(1, 1);
+        CRect notch(brect);
+
         dc->setFillColor(skin->getColor(Colors::ModSource::Macro::Background));
         dc->drawRect(brect, kDrawFilled);
 
@@ -244,9 +249,9 @@ void CModulationSourceButton::draw(CDrawContext *dc)
             dc->setFillColor(skin->getColor(Colors::ModSource::Macro::Fill));
             CRect bar(brect);
 
-            if (barx >= midx)
+            if (barx > midx)
             {
-                bar.left = midx;
+                bar.left = midx + 1;
                 bar.right = barx + 1;
             }
             else
@@ -263,8 +268,19 @@ void CModulationSourceButton::draw(CDrawContext *dc)
             vr.right = barx + 1;
             vr.bound(brect);
             dc->setFillColor(skin->getColor(Colors::ModSource::Macro::Fill));
+
             if (vr.right > vr.left)
+            {
                 dc->drawRect(vr, kDrawFilled);
+            }
+        }
+
+        if (skin->getVersion() >= 2)
+        {
+            notch.left = (barx <= brect.right - 1) ? barx : barx - 1;
+            notch.right = notch.left + 1;
+            dc->setFillColor(skin->getColor(Colors::ModSource::Macro::CurrentValue));
+            dc->drawRect(notch, kDrawFilled);
         }
     }
 
@@ -297,8 +313,7 @@ CMouseEventResult CModulationSourceButton::onMouseDown(CPoint &where, const CBut
     hasMovedBar = false;
 
     if (storage)
-        this->hideCursor =
-            Surge::Storage::getUserDefaultValue(storage, "showCursorWhileEditing", 0);
+        this->hideCursor = !Surge::UI::showCursor(storage);
 
     if (!getMouseEnabled())
         return kMouseDownEventHandledButDontNeedMovedOrUpEvents;
