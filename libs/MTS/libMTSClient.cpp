@@ -10,7 +10,7 @@
 
 const static double ln2=0.693147180559945309417;
 const static double ratioToSemitones=17.31234049066756088832;   // 12./log(2.)
-typedef void (*mts_pv)(void*);
+typedef void (*mts_void)(void);
 typedef bool (*mts_bool)(void);
 typedef bool (*mts_bcc)(char,char);
 typedef const double *(*mts_cd)(void);
@@ -22,7 +22,7 @@ typedef char (*mts_char)(void);
 
 struct mtsclientglobal
 {
-    mtsclientglobal() : RegisterClient(0), DeregisterClient(0), HasMaster(0), ShouldFilterNote(0), ShouldFilterNoteMultiChannel(0), GetTuning(0), GetMultiChannelTuning(0), UseMultiChannelTuning(0), GetScaleName(0), GetPeriodRatio(0), GetMapSize(0), GetMapStartKey(0), GetRefKey(0), esp_retuning(0)
+    mtsclientglobal() : RegisterClient(0), DeregisterClient(0), HasMaster(0), ShouldFilterNote(0), ShouldFilterNoteMultiChannel(0), GetTuning(0), GetMultiChannelTuning(0), UseMultiChannelTuning(0), GetScaleName(0), GetPeriodRatio(0), GetMapSize(0), GetMapStartKey(0), GetRefKey(0), esp_retuning(0), handle(0)
     {
         for (int i=0;i<512;i++) iet[i]=1./(440.*pow(2.,(i-325.)/12.));
         load_lib();
@@ -31,7 +31,7 @@ struct mtsclientglobal
     }
     virtual inline bool isOnline() const {return esp_retuning && HasMaster && HasMaster();}
     
-    mts_pv RegisterClient,DeregisterClient;mts_bool HasMaster;mts_bcc ShouldFilterNote,ShouldFilterNoteMultiChannel;mts_cd GetTuning;mts_cdc GetMultiChannelTuning;mts_bc UseMultiChannelTuning;mts_pcc GetScaleName;mts_d GetPeriodRatio;mts_char GetMapSize,GetMapStartKey,GetRefKey;    // Interface to lib
+    mts_void RegisterClient,DeregisterClient;mts_bool HasMaster;mts_bcc ShouldFilterNote,ShouldFilterNoteMultiChannel;mts_cd GetTuning;mts_cdc GetMultiChannelTuning;mts_bc UseMultiChannelTuning;mts_pcc GetScaleName;mts_d GetPeriodRatio;mts_char GetMapSize,GetMapStartKey,GetRefKey;    // Interface to lib
     double iet[512];const double *esp_retuning;const double *multi_channel_esp_retuning[16];    // tuning tables
     
 #ifdef _WIN32
@@ -42,8 +42,8 @@ struct mtsclientglobal
 		GetSystemDirectory(buffer,MAX_PATH);
         _tcscat(buffer,libpath);
 		if (!(handle=LoadLibrary(buffer))) return;
-        RegisterClient                  =(mts_pv)   GetProcAddress(handle,"MTS_RegisterClient");
-        DeregisterClient                =(mts_pv)   GetProcAddress(handle,"MTS_DeregisterClient");
+        RegisterClient                  =(mts_void)	GetProcAddress(handle,"MTS_RegisterClient");
+        DeregisterClient                =(mts_void)	GetProcAddress(handle,"MTS_DeregisterClient");
         HasMaster                       =(mts_bool) GetProcAddress(handle,"MTS_HasMaster");
         ShouldFilterNote                =(mts_bcc)  GetProcAddress(handle,"MTS_ShouldFilterNote");
         ShouldFilterNoteMultiChannel    =(mts_bcc)  GetProcAddress(handle,"MTS_ShouldFilterNoteMultiChannel");
@@ -56,15 +56,15 @@ struct mtsclientglobal
         GetMapStartKey                  =(mts_char) GetProcAddress(handle,"MTS_GetMapStartKey");
         GetRefKey                       =(mts_char) GetProcAddress(handle,"MTS_GetRefKey");
     }
-    virtual ~mtsclientglobal() {FreeLibrary(handle);}
+    virtual ~mtsclientglobal() {if (handle) FreeLibrary(handle);}
     HINSTANCE handle;
 #else
     virtual void load_lib()
     {
         if (!(handle=dlopen("/Library/Application Support/MTS-ESP/libMTS.dylib",RTLD_NOW)) &&
             !(handle=dlopen("/usr/local/lib/libMTS.dylib",RTLD_NOW))) return;
-        RegisterClient                  =(mts_pv)   dlsym(handle,"MTS_RegisterClient");
-        DeregisterClient                =(mts_pv)   dlsym(handle,"MTS_DeregisterClient");
+        RegisterClient                  =(mts_void)	dlsym(handle,"MTS_RegisterClient");
+        DeregisterClient                =(mts_void)	dlsym(handle,"MTS_DeregisterClient");
         HasMaster                       =(mts_bool) dlsym(handle,"MTS_HasMaster");
         ShouldFilterNote                =(mts_bcc)  dlsym(handle,"MTS_ShouldFilterNote");
         ShouldFilterNoteMultiChannel    =(mts_bcc)  dlsym(handle,"MTS_ShouldFilterNoteMultiChannel");
@@ -77,7 +77,7 @@ struct mtsclientglobal
         GetMapStartKey                  =(mts_char) dlsym(handle,"MTS_GetMapStartKey");
         GetRefKey                       =(mts_char) dlsym(handle,"MTS_GetRefKey");
     }
-    virtual ~mtsclientglobal() {dlclose(handle);}
+    virtual ~mtsclientglobal() {if (handle) dlclose(handle);}
     void *handle;
 #endif
 };
@@ -89,9 +89,9 @@ struct MTSClient
     MTSClient() : tuningName("12-TET"), supportsMultiChannelNoteFiltering(false), supportsMultiChannelTuning(false), freqRequestReceived(false)
     {
         for (int i=0;i<128;i++) retuning[i]=440.*pow(2.,(i-69.)/12.);
-        if (global.RegisterClient) global.RegisterClient((void*)this);
+        if (global.RegisterClient) global.RegisterClient();
     }
-    ~MTSClient() {if (global.DeregisterClient) global.DeregisterClient((void*)this);}
+    ~MTSClient() {if (global.DeregisterClient) global.DeregisterClient();}
     bool hasMaster() {return global.isOnline();}
     inline double freq(int midinote,char midichannel)
     {
