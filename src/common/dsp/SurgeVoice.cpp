@@ -63,15 +63,6 @@ float SurgeVoiceState::getPitch(SurgeStorage *storage)
         float b1 = storage->currentTuning.logScaledFrequencyForMidiNote(idx + 1) * 12;
         return (1.f - frac) * b0 + frac * b1;
     }
-    else
-    {
-    	if (storage->isStandardTuning && MTS_HasMaster(storage->mtsclient) &&
-    		storage->tuningApplicationMode == SurgeStorage::RETUNE_MIDI_ONLY)
-    	{
-    		res += MTS_RetuningInSemitones(storage->mtsclient,key,channel);
-    	}
-        return res;
-    }
 }
 
 SurgeVoice::SurgeVoice() {}
@@ -631,10 +622,6 @@ template <bool first> void SurgeVoice::calc_ctrldata(QuadFilterChainState *Q, in
     octaveSize = 12.0f;
     if (!storage->isStandardTuning && storage->tuningApplicationMode == SurgeStorage::RETUNE_ALL)
         octaveSize = storage->currentScale.count;
-    
-    if (storage->isStandardTuning && MTS_HasMaster(storage->mtsclient) &&
-        storage->tuningApplicationMode == SurgeStorage::RETUNE_ALL)
-        octaveSize = MTS_GetMapSize(storage->mtsclient);
 
     state.scenepbpitch = pb + localcopy[pitch_id].f * (scene->pitch.extend_range ? 12.f : 1.f) +
                          (octaveSize * localcopy[octave_id].i);

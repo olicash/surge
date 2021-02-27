@@ -361,7 +361,10 @@ int SurgeSynthesizer::calculateChannelMask(int channel, int key)
 
 void SurgeSynthesizer::playNote(char channel, char key, char velocity, float detune)
 {
-    if (halt_engine || MTS_ShouldFilterNote(storage.mtsclient,key,channel))
+    if (halt_engine || (storage.oddsound_mts_active && MTS_ShouldFilterNote(storage.oddsound_mts_client,key,channel)))
+        
+        
+        (storage.oddsound_mts_active && MTS_ShouldFilterNote(storage.oddsound_mts_client,key,channel))
         return;
 
     // For split/dual
