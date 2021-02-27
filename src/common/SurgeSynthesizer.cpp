@@ -2332,9 +2332,9 @@ bool SurgeSynthesizer::loadOscalgos()
                 {
                     double d;
                     int j;
-                    char lbl[256];
+                    char lbl[TXT_SIZE];
 
-                    sprintf(lbl, "p%i", k);
+                    snprintf(lbl, TXT_SIZE, "p%i", k);
 
                     if (storage.getPatch().scene[s].osc[i].p[k].valtype == vt_float)
                     {
@@ -2351,7 +2351,7 @@ bool SurgeSynthesizer::loadOscalgos()
                         }
                     }
 
-                    sprintf(lbl, "p%i_deform_type", k);
+                    snprintf(lbl, TXT_SIZE, "p%i_deform_type", k);
 
                     if (e->QueryIntAttribute(lbl, &j) == TIXML_SUCCESS)
                     {
@@ -2825,14 +2825,14 @@ void SurgeSynthesizer::getParameterDisplay(long index, char *text)
     }
     else if (index >= metaparam_offset)
     {
-        sprintf(text, "%.2f %%",
-                100.f * storage.getPatch()
-                            .scene[0]
-                            .modsources[ms_ctrl1 + index - metaparam_offset]
-                            ->get_output());
+        snprintf(text, TXT_SIZE, "%.2f %%",
+                 100.f * storage.getPatch()
+                             .scene[0]
+                             .modsources[ms_ctrl1 + index - metaparam_offset]
+                             ->get_output());
     }
     else
-        sprintf(text, "-");
+        snprintf(text, TXT_SIZE, "-");
 }
 
 void SurgeSynthesizer::getParameterDisplayAlt(long index, char *text)
@@ -2855,14 +2855,14 @@ void SurgeSynthesizer::getParameterDisplay(long index, char *text, float x)
     }
     else if (index >= metaparam_offset)
     {
-        sprintf(text, "%.2f %%",
-                100.f * storage.getPatch()
-                            .scene[0]
-                            .modsources[ms_ctrl1 + index - metaparam_offset]
-                            ->get_output());
+        snprintf(text, TXT_SIZE, "%.2f %%",
+                 100.f * storage.getPatch()
+                             .scene[0]
+                             .modsources[ms_ctrl1 + index - metaparam_offset]
+                             ->get_output());
     }
     else
-        sprintf(text, "-");
+        snprintf(text, TXT_SIZE, "-");
 }
 
 void SurgeSynthesizer::getParameterName(long index, char *text)
@@ -2873,16 +2873,17 @@ void SurgeSynthesizer::getParameterName(long index, char *text)
         // TODO: FIX SCENE ASSUMPTION
         string sn[3] = {"", "A ", "B "};
 
-        sprintf(text, "%s%s", sn[scn].c_str(),
-                storage.getPatch().param_ptr[index]->get_full_name());
+        snprintf(text, TXT_SIZE, "%s%s", sn[scn].c_str(),
+                 storage.getPatch().param_ptr[index]->get_full_name());
     }
     else if (index >= metaparam_offset)
     {
         int c = index - metaparam_offset;
-        sprintf(text, "Macro %i: %s", c + 1, storage.getPatch().CustomControllerLabel[c]);
+        snprintf(text, TXT_SIZE, "Macro %i: %s", c + 1,
+                 storage.getPatch().CustomControllerLabel[c]);
     }
     else
-        sprintf(text, "-");
+        snprintf(text, TXT_SIZE, "-");
 }
 
 void SurgeSynthesizer::getParameterNameW(long index, wchar_t *ptr)
@@ -3348,6 +3349,7 @@ void SurgeSynthesizer::process()
         {
             std::lock_guard<std::mutex> mg(patchLoadSpawnMutex);
             // spawn patch-loading thread
+            allNotesOff();
             halt_engine = true;
 
 #if MAC || LINUX
@@ -3799,10 +3801,10 @@ void SurgeSynthesizer::setupActivateExtraOutputs()
 void SurgeSynthesizer::swapMetaControllers(int c1, int c2)
 {
     char nt[20];
-    strncpy(nt, storage.getPatch().CustomControllerLabel[c1], 16);
-    strncpy(storage.getPatch().CustomControllerLabel[c1],
+    strxcpy(nt, storage.getPatch().CustomControllerLabel[c1], 16);
+    strxcpy(storage.getPatch().CustomControllerLabel[c1],
             storage.getPatch().CustomControllerLabel[c2], 16);
-    strncpy(storage.getPatch().CustomControllerLabel[c2], nt, 16);
+    strxcpy(storage.getPatch().CustomControllerLabel[c2], nt, 16);
 
     storage.modRoutingMutex.lock();
 

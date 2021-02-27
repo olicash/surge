@@ -207,8 +207,12 @@ enum osc_type
 };
 
 const char osc_type_names[n_osc_types][24] = {
-    "Classic", "Sine",   "Wavetable", "S&H Noise", "Audio In",         "FM3",   "FM2",
-    "Window",  "Modern", "Waveguide" /*, "Pluck",     "Macro",     "Phase Distortion", "Chaos", "FM4"*/};
+    "Classic", "Sine",   "Wavetable", "S&H Noise", "Audio In", "FM3", "FM2",
+    "Window",  "Modern", "String" /*,     "Macro",     "Phase Distortion", "Chaos", "FM4"*/};
+
+const char osc_type_shortnames[n_osc_types][24] = {
+    "Classic", "Sine", "WT",     "S&H Noise", "Audio In",
+    "FM3",     "FM2",  "Window", "Modern",    "String" /*, "Macro", "PD", "Chaos", "FM4"*/};
 
 const char window_names[9][16] = {
     "Triangle", "Cosine", "Blend 1", "Blend 2",   "Blend 3",
@@ -467,7 +471,8 @@ struct OscillatorStorage : public CountedSetUserData // The counted set is the w
     Parameter p[n_osc_params];
     Parameter keytrack, retrigger;
     Wavetable wt;
-    char wavetable_display_name[256];
+#define WAVETABLE_DISPLAY_NAME_SIZE 256
+    char wavetable_display_name[WAVETABLE_DISPLAY_NAME_SIZE];
     void *queue_xmldata;
     int queue_type;
 
@@ -772,7 +777,8 @@ class SurgePatch
     // metadata
     std::string name, category, author, comment;
     // metaparameters
-    char CustomControllerLabel[n_customcontrollers][16];
+#define CUSTOM_CONTROLLER_LABEL_SIZE 16
+    char CustomControllerLabel[n_customcontrollers][CUSTOM_CONTROLLER_LABEL_SIZE];
 
     int streamingRevision;
     int currentSynthStreamingRevision;
@@ -989,6 +995,8 @@ class alignas(16) SurgeStorage
     bool isStandardMapping = true;
     float tuningPitch = 32.0f, tuningPitchInv = 0.03125f;
 
+    void initialize_oddsound();
+    void deinitialize_oddsound();
     MTSClient *oddsound_mts_client = nullptr;
     std::atomic<bool> oddsound_mts_active;
     uint32_t oddsound_mts_on_check = 0;

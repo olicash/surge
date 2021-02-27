@@ -27,6 +27,8 @@
 template <int COMB_SIZE> // power of two
 struct SSESincDelayLine
 {
+    static constexpr int comb_size = COMB_SIZE;
+
     float buffer alignas(16)[COMB_SIZE + FIRipol_N];
     int wp = 0;
 
@@ -44,7 +46,7 @@ struct SSESincDelayLine
         delay = delay;
         auto iDelay = (int)delay;
         auto fracDelay = delay - iDelay;
-        auto sincTableOffset = (int)(fracDelay * FIRipol_N) * (FIRipol_N << 1);
+        auto sincTableOffset = (int)((1 - fracDelay) * FIRipol_M) * FIRipol_N * 2;
 
         // So basically we interpolate around FIRipol_N (the 12 sample sinc)
         // remembering that FIRoffset is the offset to center your table at
@@ -53,15 +55,15 @@ struct SSESincDelayLine
 
         // And so now do what we do in COMBSSE2Quad
         __m128 a = _mm_loadu_ps(&buffer[readPtr]);
-        __m128 b = _mm_load_ps(&sinctable[sincTableOffset]);
+        __m128 b = _mm_loadu_ps(&sinctable[sincTableOffset]);
         __m128 o = _mm_mul_ps(a, b);
 
         a = _mm_loadu_ps(&buffer[readPtr + 4]);
-        b = _mm_load_ps(&sinctable[sincTableOffset + 4]);
+        b = _mm_loadu_ps(&sinctable[sincTableOffset + 4]);
         o = _mm_add_ps(o, _mm_mul_ps(a, b));
 
         a = _mm_loadu_ps(&buffer[readPtr + 8]);
-        b = _mm_load_ps(&sinctable[sincTableOffset + 8]);
+        b = _mm_loadu_ps(&sinctable[sincTableOffset + 8]);
         o = _mm_add_ps(o, _mm_mul_ps(a, b));
 
         float res;
@@ -75,7 +77,8 @@ struct SSESincDelayLine
         auto iDelay = (int)delay;
         auto frac = delay - iDelay;
         int RP = (wp - iDelay) & (COMB_SIZE - 1);
-        return buffer[RP] * (1 - frac) + buffer[RP + 1] * frac;
+        int RPP = RP == 0 ? COMB_SIZE - 1 : RP - 1;
+        return buffer[RP] * (1 - frac) + buffer[RPP] * frac;
     }
 
     inline void clear() { memset((void *)buffer, 0, (COMB_SIZE + FIRipol_N) * sizeof(float)); }

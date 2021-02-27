@@ -14,6 +14,8 @@
 */
 
 #include "DebugHelpers.h"
+#include "globals.h"
+#include "FastMath.h"
 
 /*
  * The waveguide oscillator is a self-oscillating delay with various filters and
@@ -29,7 +31,7 @@
  * - run two delay lines seeded the same and take two taps, tap1 and tap2,
  *   and create an output which is (1-mix) * tap1 + mix * tap2
  * - create a feedback signal fb* tap + excitation in each line
- * - run that feedback signal through a onepole filter in each line
+ * - run that feedback signal through a tone filter in each line
  * - drive that feedback signal and run it through a soft clipper in each line
  * - write that feedback signal to the head of the delay line
  *
@@ -42,39 +44,40 @@
 
 enum ExModes
 {
-    chirp_noise,
-    chirp_dust,
-    chirp_sine,
-    chirp_ramp,
-    chirp_square,
-    chirp_sine1over,
-    continuous_noise,
-    continuous_dust,
-
+    burst_noise,
+    burst_dust,
+    burst_sine,
+    burst_ramp,
+    burst_square,
+    burst_sweep,
+    constant_noise,
+    constant_dust,
 };
 
 int waveguide_excitations_count() { return 8; }
+
 std::string waveguide_excitation_name(int i)
 {
     auto m = (ExModes)i;
+
     switch (m)
     {
-    case chirp_noise:
-        return "Chirp Noise";
-    case chirp_dust:
-        return "Chirp Dust";
-    case chirp_sine:
-        return "Chirp Sine";
-    case chirp_ramp:
-        return "Chirp Ramp";
-    case chirp_square:
-        return "Chirp Square";
-    case chirp_sine1over:
-        return "Chirp Sine 1/t";
-    case continuous_noise:
-        return "Continuous Noise";
-    case continuous_dust:
-        return "Continuous Dust";
+    case burst_noise:
+        return "Burst Noise";
+    case burst_dust:
+        return "Burst Dust";
+    case burst_sine:
+        return "Burst Sine";
+    case burst_ramp:
+        return "Burst Ramp";
+    case burst_square:
+        return "Burst Square";
+    case burst_sweep:
+        return "Burst Sweep";
+    case constant_noise:
+        return "Constant Noise";
+    case constant_dust:
+        return "Constant Dust";
     }
     return "Unknown";
 }
@@ -86,184 +89,255 @@ void WaveguideOscillator::init(float pitch, bool is_display, bool nzi)
         std::max(1.0, dsamplerate_os * (1 / 8.175798915) * storage->note_to_pitch_inv(pitch_t));
 
     auto pitch2_t =
-        std::min(148.f, pitch + localcopy[oscdata->p[wg_tap2_offset].param_id_in_scene].f);
+        std::min(148.f, pitch + localcopy[oscdata->p[wg_str2_detune].param_id_in_scene].f);
     auto pitchmult2_inv =
         std::max(1.0, dsamplerate_os * (1 / 8.175798915) * storage->note_to_pitch_inv(pitch2_t));
 
     tap[0].startValue(pitchmult_inv);
     tap[1].startValue(pitchmult2_inv);
     t2level.startValue(
-        limit_range(localcopy[oscdata->p[wg_tap2_mix].param_id_in_scene].f, 0.f, 1.f));
+        0.5 * limit_range(localcopy[oscdata->p[wg_str_balance].param_id_in_scene].f, -1.f, 1.f) +
+        0.5);
 
-    auto prefill = (int)floor(3 * std::max(pitchmult_inv, pitchmult2_inv));
-    delayLine[0].clear();
-    delayLine[1].clear();
+    // we need a big prefill to supprot the delay line for FM
+    auto prefill = (int)floor(10 * std::max(pitchmult_inv, pitchmult2_inv));
 
-    auto mode = (ExModes)oscdata->p[wg_ex_mode].val.i;
-    auto ph1 = 0.0, ph2 = 0.0;
+    for (int i = 0; i < 2; ++i)
+    {
+        delayLine[i].clear();
+        driftlfo[i] = 0.f;
+        driftlfo2[i] = 0.f;
+        if (nzi)
+            driftlfo2[i] = 0.0005 * ((float)rand() / (float)(RAND_MAX));
+    }
+
+    auto mode = (ExModes)oscdata->p[wg_exciter_mode].val.i;
+    phase1 = 0.0, phase2 = 0.0;
+
+    if (!oscdata->retrigger.val.b && !is_display)
+    {
+        phase1 = (float)rand() / (float)RAND_MAX;
+        phase2 = (float)rand() / (float)RAND_MAX;
+    }
+
     auto r1 = 1.0 / pitchmult_inv;
     auto r2 = 1.0 / pitchmult2_inv;
-    auto d0 = limit_range(localcopy[oscdata->p[wg_ex_amp].param_id_in_scene].f, 0.f, 1.f);
+    auto d0 = limit_range(localcopy[oscdata->p[wg_exciter_level].param_id_in_scene].f, 0.f, 1.f);
+    d0 = powf(d0, 0.125);
+
     for (int i = 0; i < prefill; ++i)
     {
         switch (mode)
         {
-        case chirp_sine:
+        case burst_sine:
         {
-            delayLine[0].write(0.707 * std::sin(2.0 * M_PI * ph1));
-            delayLine[1].write(0.707 * std::sin(2.0 * M_PI * ph2));
-            ph1 += r1;
-            ph2 += r2;
+            delayLine[0].write(0.707 * std::sin(2.0 * M_PI * phase1));
+            delayLine[1].write(0.707 * std::sin(2.0 * M_PI * phase2));
+            phase1 += r1;
+            phase2 += r2;
         }
         break;
-        case chirp_square:
+        case burst_square:
         {
-            delayLine[0].write(0.707 * ((ph1 > 0.5) * 2 - 1));
-            delayLine[1].write(0.707 * ((ph2 > 0.5) * 2 - 1));
-            ph1 += r1;
-            ph2 += r2;
-            if (ph1 > 1)
-                ph1 -= 1;
-            if (ph2 > 1)
-                ph2 -= 1;
+            delayLine[0].write(0.707 * ((phase1 > 0.5) * 2 - 1));
+            delayLine[1].write(0.707 * ((phase2 > 0.5) * 2 - 1));
+
+            phase1 += r1;
+            phase2 += r2;
+
+            if (phase1 > 1)
+                phase1 -= 1;
+            if (phase2 > 1)
+                phase2 -= 1;
         }
         break;
-        case chirp_ramp:
+        case burst_ramp:
         {
-            delayLine[0].write(0.707 * (ph1 * 2 - 1));
-            delayLine[1].write(0.707 * (ph2 * 2 - 1));
-            ph1 += r1;
-            ph2 += r2;
-            if (ph1 > 1)
-                ph1 -= 1;
-            if (ph2 > 1)
-                ph2 -= 1;
+            delayLine[0].write(0.707 * (phase1 * 2 - 1));
+            delayLine[1].write(0.707 * (phase2 * 2 - 1));
+
+            phase1 += r1;
+            phase2 += r2;
+
+            if (phase1 > 1)
+                phase1 -= 1;
+            if (phase2 > 1)
+                phase2 -= 1;
         }
         break;
-        case chirp_sine1over:
+        case burst_sweep:
         {
-            if (ph1 == 0)
+            if (phase1 == 0)
             {
                 delayLine[0].write(0.707);
             }
             else
             {
-                delayLine[0].write(0.707 * std::sin(2.0 * M_PI / ph1));
+                delayLine[0].write(0.707 * std::sin(2.0 * M_PI / phase1));
             }
 
-            if (ph2 == 0)
+            if (phase2 == 0)
             {
                 delayLine[1].write(0.707);
             }
             else
             {
-                delayLine[1].write(0.707 * std::sin(2.0 * M_PI / ph2));
+                delayLine[1].write(0.707 * std::sin(2.0 * M_PI / phase2));
             }
-            ph1 += r1;
-            ph2 += r2;
-            if (ph1 > 1)
-                ph1 -= 1;
-            if (ph2 > 1)
-                ph2 -= 1;
+
+            phase1 += r1;
+            phase2 += r2;
+
+            if (phase1 > 1)
+                phase1 -= 1;
+            if (phase2 > 1)
+                phase2 -= 1;
         }
         break;
-        case chirp_dust:
-            d0 = 1;
-        case continuous_dust:
+        case burst_dust:
+            d0 = 1.0;
+        case constant_dust:
         {
             auto rn1 = (float)rand() / (float)RAND_MAX;
             auto rn2 = (float)rand() / (float)RAND_MAX;
-            auto ds1 = (rn1 > 0.98) ? 1.0 : (rn1 < 0.02) ? -1.0 : 0;
-            auto ds2 = (rn2 > 0.98) ? 1.0 : (rn2 < 0.02) ? -1.0 : 0;
+            auto ds1 = (rn1 > dustpos) * 1.0 - (rn1 < dustneg) * 1.0;
+            auto ds2 = (rn2 > dustpos) * 1.0 - (rn2 < dustneg) * 1.0;
+
             delayLine[0].write(d0 * ds1);
             delayLine[1].write(d0 * ds2);
         }
         break;
-        case chirp_noise:
+        case burst_noise:
             d0 = 1;
-        case continuous_noise:
+        case constant_noise:
         default:
             delayLine[0].write(d0 * (((float)rand() / (float)RAND_MAX) * 2 - 1));
             delayLine[1].write(d0 * (((float)rand() / (float)RAND_MAX) * 2 - 1));
             break;
         }
     }
-    priorSample[0] = delayLine[0].buffer[prefill - 1];
-    priorSample[1] = delayLine[1].buffer[prefill - 1];
+    priorSample[0] = delayLine[0].buffer[(delayLine[0].wp - 1) & delayLine[0].comb_size];
+    priorSample[1] = delayLine[1].buffer[(delayLine[1].wp - 1) & delayLine[1].comb_size];
 }
 
 void WaveguideOscillator::process_block(float pitch, float drift, bool stereo, bool FM,
-                                        float FMdepth)
+                                        float fmdepthV)
 {
-    auto mode = (ExModes)oscdata->p[wg_ex_mode].val.i;
-    auto pitch_t = std::min(148.f, pitch);
+    auto mode = (ExModes)oscdata->p[wg_exciter_mode].val.i;
+    driftlfo[0] = drift_noise(driftlfo2[0]);
+    auto lfodetune = drift * driftlfo[0];
+    auto pitch_t = std::min(148.f, pitch + lfodetune);
     auto pitchmult_inv = std::max((FIRipol_N >> 1) + 1.0, dsamplerate_os * (1 / 8.175798915) *
                                                               storage->note_to_pitch_inv(pitch_t));
-
-    examp.newValue(limit_range(localcopy[oscdata->p[wg_ex_amp].param_id_in_scene].f, 0.f, 1.f));
-    auto p2off = oscdata->p[wg_tap2_offset].get_extended(
-        localcopy[oscdata->p[wg_tap2_offset].param_id_in_scene].f);
-    auto pitch2_t = std::min(148.f, pitch + p2off);
+    auto d0 = limit_range(localcopy[oscdata->p[wg_exciter_level].param_id_in_scene].f, 0.f, 1.f);
+    examp.newValue(d0 * d0 * d0);
+    auto p2off = oscdata->p[wg_str2_detune].get_extended(
+        localcopy[oscdata->p[wg_str2_detune].param_id_in_scene].f);
+    driftlfo[1] = drift_noise(driftlfo2[1]);
+    lfodetune = drift * driftlfo[1];
+    auto pitch2_t = std::min(148.f, pitch + p2off + lfodetune);
     auto pitchmult2_inv =
         std::max((FIRipol_N >> 1) + 1.0,
                  dsamplerate_os * (1 / 8.175798915) * storage->note_to_pitch_inv(pitch2_t));
 
+    pitchmult_inv = std::min(pitchmult_inv, (delayLine[0].comb_size - 100) * 1.0);
+    pitchmult2_inv = std::min(pitchmult2_inv, (delayLine[0].comb_size - 100) * 1.0);
+
     tap[0].newValue(pitchmult_inv);
     tap[1].newValue(pitchmult2_inv);
 
-    t2level.newValue(limit_range(localcopy[oscdata->p[wg_tap2_mix].param_id_in_scene].f, 0.f, 1.f));
+    t2level.newValue(
+        0.5 * limit_range(localcopy[oscdata->p[wg_str_balance].param_id_in_scene].f, -1.f, 1.f) +
+        0.5);
 
-    auto fbp = limit_range(localcopy[oscdata->p[wg_feedback].param_id_in_scene].f, 0.f, 1.f);
+    auto fbp = limit_range(localcopy[oscdata->p[wg_str1_decay].param_id_in_scene].f, 0.f, 1.f);
     fbp = sqrt(fbp);
-    auto fb0 = 48000 * dsamplerate_inv * 0.9; // just picked by listening
+    auto fb0 = 48000 * dsamplerate_inv * 0.95; // just picked by listening
     auto fb1 = 1.0;
     feedback[0].newValue(fb1 * fbp + fb0 * (1 - fbp));
 
-    auto fbp2 = limit_range(localcopy[oscdata->p[wg_feedback2].param_id_in_scene].f, 0.f, 1.f);
+    auto fbp2 = limit_range(localcopy[oscdata->p[wg_str2_decay].param_id_in_scene].f, 0.f, 1.f);
     fbp2 = sqrt(fbp2);
     feedback[1].newValue(fb1 * fbp2 + fb0 * (1 - fbp2));
 
-    onepole.newValue(
-        limit_range(localcopy[oscdata->p[wg_inloop_onepole].param_id_in_scene].f, 0.f, 1.f));
+    // fmdepthV basically goes 0 -> 16 so lets push it 0,1 for now
+    double fv = fmdepthV / 16.0;
+    fmdepth.newValue(fv);
 
-    float val[2];
+    tone.newValue(limit_range(localcopy[oscdata->p[wg_stiffness].param_id_in_scene].f, -1.f, 1.f));
+    float clo = -12, cmid = 100, chi = -33;
+    float hpCutoff = chi;
+    float lpCutoff = cmid;
+
+    if (tone.v > 0)
+    {
+        // OK so cool scale the hp cutoff
+        auto tv = tone.v;
+        hpCutoff = tv * (cmid - chi) + chi;
+    }
+    else
+    {
+        auto tv = -tone.v;
+        lpCutoff = tv * (clo - cmid) + cmid;
+    }
+
+    lp.coeff_LP(lp.calc_omega((lpCutoff / 12.0) - 2.f) * OSC_OVERSAMPLING, 0.707);
+    // hp.coeff_HP(hp.calc_omega((hpCutoff / 12.0) - 2.f) * OSC_OVERSAMPLING, 0.707);
+
+    float val[2] = {0.f, 0.f};
     for (int i = 0; i < BLOCK_SIZE_OS; ++i)
     {
         for (int t = 0; t < 2; ++t)
         {
             auto v = tap[t].v;
-            val[t] = delayLine[t].read(v - 0.5);
+            if (FM)
+                v *= Surge::DSP::fastexp(limit_range(fmdepth.v * master_osc[i] * 3, -6.f, 4.f));
 
+            val[t] = delayLine[t].read(v);
+
+            // Add continuous excitation
+            switch (mode)
+            {
+            case constant_noise:
+            {
+                val[t] += examp.v * ((float)rand() / (float)RAND_MAX * 2 - 1);
+            }
+            break;
+            case constant_dust:
+            {
+                auto rn1 = (float)rand() / (float)RAND_MAX;
+                auto ds1 = examp.v * ((rn1 > dustpos) * 1.0 - (rn1 < dustneg) * 1.0);
+                val[t] += ds1;
+            }
+            break;
+            default:
+                val[t] *= examp.v;
+                break;
+            }
             // precautionary hard clip
             auto fbv = limit_range(val[t], -1.f, 1.f);
 
             // one pole filter the feedback value
-            auto filtv = onepole.v * fbv + (1 - onepole.v) * priorSample[t];
-            priorSample[t] = filtv;
+            // auto filtv = tone.v * fbv + (1 - tone.v) * priorSample[t];
+            auto lpfiltv = lp.process_sample(fbv);
 
-            switch (mode)
-            {
-            case continuous_noise:
-            {
-                filtv += examp.v * ((float)rand() / (float)RAND_MAX * 2 - 1);
-            }
-            break;
-            case continuous_dust:
-            {
-                auto rn1 = (float)rand() / (float)RAND_MAX;
-                auto ds1 = examp.v * ((rn1 > 0.98) ? 1.0 : (rn1 < 0.02) ? -1.0 : 0);
-                filtv += ds1;
-            }
-            break;
-            default:
-                break;
-            }
+            auto tv1 = std::max(tone.v * 1.6f, 0.f) * 0.62; // if this was 625 i would go to 1
+            float hptv = tv1 * tv1 * tv1;
+            auto ophpfiltv = (1 - hptv) * fbv - (hptv)*priorSample[t];
+            ophpfiltv = (ophpfiltv < 1e-20 && ophpfiltv > -1e-20) ? 0.0 : ophpfiltv;
+            priorSample[t] = ophpfiltv;
+
+            auto filtv = (tone.v > 0) ? ophpfiltv : lpfiltv;
+            // This is basically the flush_denormals from the biquad
+            filtv = (filtv < 1e-20 && filtv > -1e-20) ? 0.0 : filtv;
+
             delayLine[t].write(filtv * feedback[t].v);
         }
 
-        float out = (1.0 - t2level.v) * val[0] + t2level.v * val[1];
+        // float out = (1.0 - t2level.v) * val[0] + t2level.v * val[1];
+        float out = val[0] + t2level.v * (val[1] - val[0]);
         // softclip the ouptput
-        out = 1.5 * out - 0.5 * out * out * out;
+        out = out * (1.5 - 0.5 * out * out);
 
         output[i] = out;
         outputR[i] = out;
@@ -273,46 +347,51 @@ void WaveguideOscillator::process_block(float pitch, float drift, bool stereo, b
         t2level.process();
         feedback[0].process();
         feedback[1].process();
-        onepole.process();
+        tone.process();
         examp.process();
+        fmdepth.process();
     }
+    lp.flush_sample_denormal();
 }
 
 void WaveguideOscillator::init_ctrltypes()
 {
-    oscdata->p[wg_ex_mode].set_name("Mode");
-    oscdata->p[wg_ex_mode].set_type(ct_waveguide_excitation_model);
+    oscdata->p[wg_exciter_mode].set_name("Exciter");
+    oscdata->p[wg_exciter_mode].set_type(ct_waveguide_excitation_model);
 
-    oscdata->p[wg_ex_amp].set_name("Excitation Amplitude");
-    oscdata->p[wg_ex_amp].set_type(ct_percent);
+    oscdata->p[wg_exciter_level].set_name("Exciter Level");
+    oscdata->p[wg_exciter_level].set_type(ct_percent);
+    oscdata->p[wg_exciter_level].val_default.f = 1.f;
 
-    oscdata->p[wg_feedback].set_name("Tap 1 FB");
-    oscdata->p[wg_feedback].set_type(ct_percent);
+    oscdata->p[wg_str1_decay].set_name("String 1 Decay");
+    oscdata->p[wg_str1_decay].set_type(ct_percent);
+    oscdata->p[wg_str1_decay].val_default.f = 0.95;
 
-    oscdata->p[wg_feedback2].set_name("Tap 2 FB");
-    oscdata->p[wg_feedback2].set_type(ct_percent);
+    oscdata->p[wg_str2_decay].set_name("String 2 Decay");
+    oscdata->p[wg_str2_decay].set_type(ct_percent);
+    oscdata->p[wg_str2_decay].val_default.f = 0.95;
 
-    oscdata->p[wg_tap2_offset].set_name("Tap 2 Detune");
-    oscdata->p[wg_tap2_offset].set_type(ct_oscspread);
+    oscdata->p[wg_str2_detune].set_name("String 2 Detune");
+    oscdata->p[wg_str2_detune].set_type(ct_oscspread_bipolar);
 
-    oscdata->p[wg_tap2_mix].set_name("Tap 2 Mix");
-    oscdata->p[wg_tap2_mix].set_type(ct_percent);
+    oscdata->p[wg_str_balance].set_name("String Balance");
+    oscdata->p[wg_str_balance].set_type(ct_percent_bipolar_stringbal);
 
-    oscdata->p[wg_inloop_onepole].set_name("InLoop OnePole");
-    oscdata->p[wg_inloop_onepole].set_type(ct_percent);
+    oscdata->p[wg_stiffness].set_name("Stiffness");
+    oscdata->p[wg_stiffness].set_type(ct_percent_bipolar);
 }
 
 void WaveguideOscillator::init_default_values()
 {
-    oscdata->p[wg_ex_mode].val.i = 0;
-    oscdata->p[wg_ex_amp].val.f = 1;
+    oscdata->p[wg_exciter_mode].val.i = 0;
+    oscdata->p[wg_exciter_level].val.f = 1.f;
 
-    oscdata->p[wg_feedback].val.f = 0.99;
-    oscdata->p[wg_feedback2].val.f = 0.99;
+    oscdata->p[wg_str1_decay].val.f = 0.95f;
+    oscdata->p[wg_str2_decay].val.f = 0.95f;
 
-    oscdata->p[wg_tap2_offset].val.f = 0.1;
-    oscdata->p[wg_tap2_offset].extend_range = false;
-    oscdata->p[wg_tap2_mix].val.f = 0.1;
+    oscdata->p[wg_str2_detune].val.f = 0.1f;
+    oscdata->p[wg_str2_detune].extend_range = false;
+    oscdata->p[wg_str_balance].val.f = 0.f;
 
-    oscdata->p[wg_inloop_onepole].val.f = 0.96;
+    oscdata->p[wg_stiffness].val.f = 0.f;
 }

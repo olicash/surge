@@ -15,6 +15,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
+if(NOT BUILD_TESTING)
+  set(BUILD_TESTING "False" CACHE STRING "" FORCE)
+endif()
+
 project(Surge VERSION 1.9.0.0 LANGUAGES CXX ASM)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -28,13 +32,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   # Any Clang or any GCC
   add_compile_options(
     -Wno-multichar
-
     # Targetting Windows with GCC/Clang is experimental
     $<$<NOT:$<BOOL:${WIN32}>>:-Werror>
 
     # PE/COFF doesn't support visibility
     $<$<NOT:$<BOOL:${WIN32}>>:-fvisibility=hidden>
-    $<$<NOT:$<BOOL:${WIN32}>>:-fvisibility-inlines-hidden>
+    # Inlines visibility is only relevant with C++
+    $<$<AND:$<NOT:$<BOOL:${WIN32}>>,$<COMPILE_LANGUAGE:CXX>>:-fvisibility-inlines-hidden>
   )
   # Enable SSE2 on x86-32 only. It's implied on x86-64 and N/A elsewhere.
   if(${CMAKE_SIZEOF_VOID_P} EQUAL 4)
@@ -66,6 +70,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     endif()
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "^GNU$")
     # GCC only
+    add_compile_options(
+        -Wformat-truncation=0 # squelch warning about snprintf truncating strings (see PR #3977)
+    )
   endif()
 endif()
 
@@ -120,6 +127,7 @@ add_subdirectory(libs/filesystem)
 add_subdirectory(libs/tinyxml)
 add_subdirectory(libs/escape-from-vstgui)
 add_subdirectory(libs/oddsound-mts)
+add_subdirectory(libs/libsamplerate)
 
 target_link_libraries(surge-shared PUBLIC
   surge::airwindows
@@ -127,6 +135,7 @@ target_link_libraries(surge-shared PUBLIC
   surge::filesystem
   surge::tinyxml
   surge::oddsound-mts
+  samplerate
 )
 
 # We want to run this once alas, since JUCE needs it even though it is a byproduct of a phase to build the
@@ -1341,6 +1350,14 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
   add_library(surge-juce-userint src/surge_effects_bank/UserInteractionsJUCE.cpp )
   target_include_directories(surge-juce-userint PRIVATE ${SURGE_COMMON_INCLUDES})
 
+  set(JUCE_ASIO_SUPPORT FALSE)
+
+  if (DEFINED ENV{ASIOSDK_DIR})
+    file(TO_CMAKE_PATH "$ENV{ASIOSDK_DIR}" ASIOSDK_DIR)
+    message(STATUS "ASIO SDK found at ${ASIOSDK_DIR}")
+    set(JUCE_ASIO_SUPPORT TRUE)
+  endif()
+
   if( BUILD_SURGE_EFFECTS_BANK )
     juce_add_plugin(surge-fx
             PRODUCT_NAME "SurgeEffectsBank"
@@ -1388,6 +1405,12 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             TARGET_HEADLESS=1
             )
 
+    if (JUCE_ASIO_SUPPORT)
+      target_compile_definitions(surge-fx PUBLIC
+        JUCE_ASIO=1
+        )
+    endif()
+
     target_sources(surge-fx PRIVATE
             src/surge_effects_bank/SurgeFXEditor.cpp
             src/surge_effects_bank/SurgeFXProcessor.cpp
@@ -1413,6 +1436,12 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             ${SURGE_COMMON_INCLUDES}
             ${OS_INCLUDE_DIRECTORIES}
             )
+
+    if (JUCE_ASIO_SUPPORT)
+      target_include_directories(surge-fx PRIVATE
+        ${ASIOSDK_DIR}/common
+        )
+    endif()
 
     target_compile_definitions(surge-fx PRIVATE ${OS_COMPILE_DEFINITIONS} )
 
@@ -1502,6 +1531,12 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             $<IF:$<CONFIG:DEBUG>,BUILD_IS_DEBUG,BUILD_IS_RELEASE>=1
             )
 
+    if (JUCE_ASIO_SUPPORT)
+      target_compile_definitions(surge-xt PUBLIC
+        JUCE_ASIO=1
+        )
+    endif()
+
     # LinkOrder on Linux matters so make a little lib which contains UIJUCE so I can link
     # it AFTER surge-shared (since the libs come after the source in the JUCE build of course)
     add_library(surge-xt-userint src/surge_synth_juce/UserInteractionsJUCE.cpp )
@@ -1545,6 +1580,12 @@ if( ${BUILD_SURGE_JUCE_PLUGINS} )
             ${SURGE_GUI_INCLUDES}
             ${OS_INCLUDE_DIRECTORIES}
             )
+
+    if (JUCE_ASIO_SUPPORT)
+      target_include_directories(surge-xt PUBLIC
+        ${ASIOSDK_DIR}/common
+        )
+    endif()
 
     target_compile_definitions(surge-xt PUBLIC ${OS_COMPILE_DEFINITIONS} DONT_SET_USING_JUCE_NAMESPACE=1)
 

@@ -23,6 +23,7 @@
 #include "SurgeBitmaps.h"
 #include "SurgeStorage.h"
 #include "SkinColors.h"
+#include "StringOps.h"
 #include <UserDefaults.h>
 #include <iostream>
 
@@ -62,7 +63,6 @@ CSurgeSlider::CSurgeSlider(const CPoint &loc, long stylee, IControlListener *lis
     deactivated = false;
 
     label[0] = 0;
-    leftlabel[0] = 0;
     pModHandle = 0;
 
     typex = 0;
@@ -129,21 +129,12 @@ CSurgeSlider::~CSurgeSlider() { labfont->forget(); }
 
 void CSurgeSlider::setLabel(const char *txt)
 {
-    if (!_stricmp(txt, "filter balance"))
+    int rp = 0;
+    for (int i = 0; i < 255; i++)
     {
-        strcpy(label, "F2");
-        strcpy(leftlabel, "F1");
+        label[i] = txt[rp++];
     }
-    else
-    {
-        leftlabel[0] = 0;
-        int rp = 0;
-        for (int i = 0; i < 255; i++)
-        {
-            label[i] = txt[rp++];
-        }
-        label[255] = 0;
-    }
+    label[255] = 0;
     setDirty();
 }
 
@@ -165,6 +156,9 @@ void CSurgeSlider::draw(CDrawContext *dc)
     {
         drawLabel = false;
     }
+
+    labfont->setStyle(font_style);
+    labfont->setSize(font_size);
 
     CRect size = getViewSize();
 
@@ -236,26 +230,28 @@ void CSurgeSlider::draw(CDrawContext *dc)
 
     if (label[0] && (style & CSlider::kHorizontal))
     {
-        CRect trect(0, 0, 111, 13);
-        trect.offset(size.left, size.top);
-        trect.offset(13, 12);
-        trect.inset(2, 0);
-        // if (label_id >= 0) pLabels->draw(dc,trect,CPoint(0,8*label_id),0xff);
-
-        if (style & kWhite)
-            dc->setFontColor(skin->getColor(Colors::Slider::Label::Light));
-        else
-            dc->setFontColor(skin->getColor(Colors::Slider::Label::Dark));
-        dc->setFont(labfont);
-
-        //		int a = 'a' + (rand()&31);
-        //		label[1] = a;
-        // sprintf(label,"%i",drawcount_debug++);
         if (drawLabel)
         {
-            dc->drawString(label, trect, kRightText, true);
-            if (leftlabel[0])
-                dc->drawString(leftlabel, trect, kLeftText, true);
+            CRect trect(0, 0, 111, 13);
+            trect.offset(size.left, size.top);
+            trect.offset(13, 12);
+            trect.inset(2, 0);
+
+            // if (label_id >= 0) pLabels->draw(dc,trect,CPoint(0,8*label_id),0xff);
+            //		int a = 'a' + (rand()&31);
+            //		label[1] = a;
+            // sprintf(label,"%i",drawcount_debug++);
+
+            if (style & kWhite)
+                dc->setFontColor(skin->getColor(Colors::Slider::Label::Light));
+            else
+                dc->setFontColor(skin->getColor(Colors::Slider::Label::Dark));
+            dc->setFont(labfont);
+            dc->setFrameColor(kRedCColor);
+
+            // final x, y offset set from the skin
+            trect.offset(text_hoffset, text_voffset);
+            dc->drawString(label, trect, text_align, true);
         }
     }
 

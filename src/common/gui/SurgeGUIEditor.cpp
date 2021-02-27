@@ -43,6 +43,7 @@
 #include "UIInstrumentation.h"
 #include "guihelpers.h"
 #include "DebugHelpers.h"
+#include "StringOps.h"
 #include "ModulatorPresetManager.h"
 
 #include <iostream>
@@ -56,6 +57,7 @@
 #include "version.h"
 #include "CMidiLearnOverlay.h"
 #include "DPWOscillator.h"
+#include "libMTSClient.h"
 
 #if TARGET_VST3
 #include "pluginterfaces/vst/ivstcontextmenu.h"
@@ -1667,8 +1669,8 @@ void SurgeGUIEditor::openOrRecreateEditor()
         case ct_decibel_extra_narrow:
         case ct_decibel_extendable:
         case ct_freq_mod:
-        case ct_percent_bidirectional:
-        case ct_percent_bidirectional_stereo:
+        case ct_percent_bipolar:
+        case ct_percent_bipolar_stereo:
         case ct_freq_shift:
         case ct_osc_feedback_negative:
         case ct_lfodeform:
@@ -1676,6 +1678,7 @@ void SurgeGUIEditor::openOrRecreateEditor()
         case ct_pitch:
         case ct_pitch4oct:
         case ct_dpw_trimix:
+        case ct_oscspread_bipolar:
             style |= kBipolar;
             break;
         case ct_lfoamplitude:
@@ -1800,40 +1803,14 @@ void SurgeGUIEditor::openOrRecreateEditor()
 
         if (mtext.isJust())
         {
-            auto ta = currentSkin->propertyValue(l, Surge::Skin::Component::TEXT_ALIGN, "left");
-            // make text align value not case sensitive
-            std::transform(ta.begin(), ta.end(), ta.begin(),
-                           [](unsigned char c) { return std::tolower(c); });
-
-            VSTGUI::CHoriTxtAlign txtalign;
-
-            if (ta == "left")
-                txtalign = kLeftText;
-            else if (ta == "center")
-                txtalign = kCenterText;
-            else if (ta == "right")
-                txtalign = kRightText;
+            VSTGUI::CHoriTxtAlign txtalign = Surge::UI::Skin::setTextAlignProperty(
+                currentSkin->propertyValue(l, Surge::Skin::Component::TEXT_ALIGN, "left"));
 
             auto fs = currentSkin->propertyValue(l, Surge::Skin::Component::FONT_SIZE, "12");
             auto fsize = std::atof(fs.c_str());
 
-            auto fst = currentSkin->propertyValue(l, Surge::Skin::Component::FONT_STYLE, "normal");
-            // make font style value not case sensitive
-            std::transform(fst.begin(), fst.end(), fst.begin(),
-                           [](unsigned char c) { return std::tolower(c); });
-
-            VSTGUI::CTxtFace fstyle;
-
-            if (fst == "normal")
-                fstyle = kNormalFace;
-            else if (fst == "bold")
-                fstyle = kBoldFace;
-            else if (fst == "italic")
-                fstyle = kItalicFace;
-            else if (fst == "underline")
-                fstyle = kUnderlineFace;
-            else if (fst == "strikethrough")
-                fstyle = kStrikethroughFace;
+            VSTGUI::CTxtFace fstyle = Surge::UI::Skin::setFontStyleProperty(
+                currentSkin->propertyValue(l, Surge::Skin::Component::FONT_STYLE, "normal"));
 
             auto coln =
                 currentSkin->propertyValue(l, Surge::Skin::Component::TEXT_COLOR, "#FF0000");
@@ -2187,13 +2164,13 @@ void decode_controllerid(char *txt, int id)
     switch (type)
     {
     case 1:
-        sprintf(txt, "NRPN %i", num);
+        snprintf(txt, TXT_SIZE, "NRPN %i", num);
         break;
     case 2:
-        sprintf(txt, "RPN %i", num);
+        snprintf(txt, TXT_SIZE, "RPN %i", num);
         break;
     default:
-        sprintf(txt, "CC %i", num);
+        snprintf(txt, TXT_SIZE, "CC %i", num);
         break;
     };
 }
@@ -2303,7 +2280,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
             auto hu = helpURLForSpecial("osc-select");
             if (hu != "")
             {
-                sprintf(txt, "[?] Osc %i", a + 1);
+                snprintf(txt, TXT_SIZE, "[?] Osc %i", a + 1);
                 auto lurl = fullyResolvedHelpURL(hu);
                 addCallbackMenu(contextMenu, txt,
                                 [lurl]() { Surge::UserInteractions::openURL(lurl); });
@@ -2311,7 +2288,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
             }
             else
             {
-                sprintf(txt, "Osc %i", a + 1);
+                snprintf(txt, TXT_SIZE, "Osc %i", a + 1);
                 contextMenu->addEntry(txt, eid++);
             }
 
@@ -2374,7 +2351,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
             auto hu = helpURLForSpecial("scene-select");
             if (hu != "")
             {
-                sprintf(txt, "[?] Scene %c", 'A' + a);
+                snprintf(txt, TXT_SIZE, "[?] Scene %c", 'A' + a);
                 auto lurl = fullyResolvedHelpURL(hu);
                 addCallbackMenu(contextMenu, txt,
                                 [lurl]() { Surge::UserInteractions::openURL(lurl); });
@@ -2382,7 +2359,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
             }
             else
             {
-                sprintf(txt, "Scene %c", 'A' + a);
+                snprintf(txt, TXT_SIZE, "Scene %c", 'A' + a);
                 contextMenu->addEntry(txt, eid++);
             }
 
@@ -2532,7 +2509,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                     if (((md < n_global_params) || ((parameter->scene - 1) == activeScene)) &&
                         synth->isActiveModulation(md, thisms))
                     {
-                        char modtxt[256];
+                        char modtxt[TXT_SIZE];
                         auto pmd = synth->storage.getPatch().param_ptr[md];
                         pmd->get_display_of_modulation_depth(modtxt, synth->getModDepth(md, thisms),
                                                              synth->isBipolarModulation(thisms),
@@ -2540,18 +2517,18 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                         char tmptxt[1024]; // leave room for that ubuntu 20.0 error
                         if (pmd->ctrlgroup == cg_LFO)
                         {
-                            char pname[256];
+                            char pname[TXT_SIZE];
                             pmd->create_fullname(pmd->get_name(), pname, pmd->ctrlgroup,
                                                  pmd->ctrlgroup_entry,
                                                  modulatorName(pmd->ctrlgroup_entry, true).c_str());
-                            sprintf(tmptxt, "Edit %s -> %s: %s",
-                                    (char *)modulatorName(thisms, true).c_str(), pname, modtxt);
+                            snprintf(tmptxt, TXT_SIZE, "Edit %s -> %s: %s",
+                                     (char *)modulatorName(thisms, true).c_str(), pname, modtxt);
                         }
                         else
                         {
-                            sprintf(tmptxt, "Edit %s -> %s: %s",
-                                    (char *)modulatorName(thisms, true).c_str(),
-                                    pmd->get_full_name(), modtxt);
+                            snprintf(tmptxt, TXT_SIZE, "Edit %s -> %s: %s",
+                                     (char *)modulatorName(thisms, true).c_str(),
+                                     pmd->get_full_name(), modtxt);
                         }
 
                         auto clearOp = [this, parameter, control, thisms]() {
@@ -2586,14 +2563,14 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                                 parameter->get_name(), pname, parameter->ctrlgroup,
                                 parameter->ctrlgroup_entry,
                                 modulatorName(parameter->ctrlgroup_entry, true).c_str());
-                            sprintf(tmptxt, "Clear %s -> %s",
-                                    (char *)modulatorName(thisms, true).c_str(), pname);
+                            snprintf(tmptxt, TXT_SIZE, "Clear %s -> %s",
+                                     (char *)modulatorName(thisms, true).c_str(), pname);
                         }
                         else
                         {
-                            sprintf(tmptxt, "Clear %s -> %s",
-                                    (char *)modulatorName(thisms, true).c_str(),
-                                    parameter->get_full_name());
+                            snprintf(tmptxt, TXT_SIZE, "Clear %s -> %s",
+                                     (char *)modulatorName(thisms, true).c_str(),
+                                     parameter->get_full_name());
                         }
 
                         auto clearOp = [this, first_destination, md, n_total_md, thisms,
@@ -2635,7 +2612,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                             if (resetName)
                             {
                                 // And this is where we apply the name refresh, of course.
-                                strncpy(synth->storage.getPatch().CustomControllerLabel[ccid],
+                                strxcpy(synth->storage.getPatch().CustomControllerLabel[ccid],
                                         newName.c_str(), 15);
                                 synth->storage.getPatch().CustomControllerLabel[ccid][15] = 0;
                                 ((CModulationSourceButton *)control)
@@ -2711,8 +2688,9 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
 
                 contextMenu->addSeparator(eid++);
                 char vtxt[1024];
-                sprintf(vtxt, "%s: %.*f %%", Surge::UI::toOSCaseForMenu("Edit Value").c_str(),
-                        (detailedMode ? 6 : 2), 100 * cms->get_output());
+                snprintf(vtxt, 1024, "%s: %.*f %%",
+                         Surge::UI::toOSCaseForMenu("Edit Value").c_str(), (detailedMode ? 6 : 2),
+                         100 * cms->get_output());
                 addCallbackMenu(contextMenu, vtxt, [this, control, modsource]() {
                     promptForUserValueEntry(nullptr, control, modsource);
                 });
@@ -2720,7 +2698,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
 
                 contextMenu->addSeparator(eid++);
 
-                char txt[256];
+                char txt[TXT_SIZE];
 
                 // Construct submenus for explicit controller mapping
                 COptionMenu *midiSub = new COptionMenu(
@@ -2741,7 +2719,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
 
                     char name[16];
 
-                    sprintf(name, "CC %d ... %d", subs * 20, min((subs * 20) + 20, 128) - 1);
+                    snprintf(name, 16, "CC %d ... %d", subs * 20, min((subs * 20) + 20, 128) - 1);
 
                     auto added_to_menu = midiSub->addEntry(currentSub, name);
 
@@ -2763,8 +2741,8 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
 
                         char name[128];
 
-                        sprintf(name, "CC %d (%s) %s", mc, midicc_names[mc],
-                                (disabled == 1 ? "- RESERVED" : ""));
+                        snprintf(name, 128, "CC %d (%s) %s", mc, midicc_names[mc],
+                                 (disabled == 1 ? "- RESERVED" : ""));
 
                         CCommandMenuItem *cmd = new CCommandMenuItem(CCommandMenuItem::Desc(name));
 
@@ -2818,7 +2796,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                 {
                     char txt4[16];
                     decode_controllerid(txt4, synth->storage.controllers[ccid]);
-                    sprintf(txt, "Clear Learned MIDI (%s ", txt4);
+                    snprintf(txt, TXT_SIZE, "Clear Learned MIDI (%s ", txt4);
                     addCallbackMenu(contextMenu,
                                     Surge::UI::toOSCaseForMenu(txt) +
                                         midicc_names[synth->storage.controllers[ccid]] + ")",
@@ -2868,7 +2846,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                                 auto useS = s;
                                 if (useS == "")
                                     useS = "-";
-                                strncpy(synth->storage.getPatch().CustomControllerLabel[ccid],
+                                strxcpy(synth->storage.getPatch().CustomControllerLabel[ccid],
                                         useS.c_str(), 16);
                                 synth->storage.getPatch().CustomControllerLabel[ccid][15] =
                                     0; // to be sure
@@ -3008,9 +2986,9 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                 eid++;
             }
             contextMenu->addSeparator(eid++);
-            char txt[256], txt2[512];
+            char txt[TXT_SIZE], txt2[512];
             p->get_display(txt);
-            sprintf(txt2, "%s: %s", Surge::UI::toOSCaseForMenu("Edit Value").c_str(), txt);
+            snprintf(txt2, 512, "%s: %s", Surge::UI::toOSCaseForMenu("Edit Value").c_str(), txt);
             if (p->valtype == vt_float)
             {
                 if (p->can_temposync() && p->temposync)
@@ -3558,7 +3536,7 @@ int32_t SurgeGUIEditor::controlModifierClicked(CControl *control, CButtonState b
                         {
                             char txt[256], ntxt[256];
                             memset(txt, 0, 256);
-                            strncpy(txt, p->get_name(), 256);
+                            strxcpy(txt, p->get_name(), 256);
                             if (p->absolute)
                             {
                                 snprintf(ntxt, 256, "M%c Frequency", txt[1]);
@@ -4675,7 +4653,7 @@ void SurgeGUIEditor::valueChanged(CControl *control)
 
                     if ((lbl[0] == '-') && !lbl[1])
                     {
-                        strncpy(lbl, p->get_name(), 15);
+                        strxcpy(lbl, p->get_name(), 15);
                         synth->storage.getPatch().CustomControllerLabel[ccid][15] = 0;
                         ((CModulationSourceButton *)gui_modsrc[modsource])->setlabel(lbl);
                         ((CModulationSourceButton *)gui_modsrc[modsource])->invalid();
@@ -5691,6 +5669,30 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeTuningMenu(VSTGUI::CRect &menuRect, boo
         tuningSubMenu->addSeparator();
     }
 
+    if (this->synth->storage.oddsound_mts_active && this->synth->storage.oddsound_mts_client)
+    {
+        // an 'mts is on' disabled menu
+        auto mm = addCallbackMenu(tuningSubMenu,
+                                  Surge::UI::toOSCaseForMenu("ODDSound MTS-ESP Active"), []() {});
+        mm->setEnabled(false);
+
+        // an 'mts scale name' disabled menu
+        std::string mtsScale = MTS_GetScaleName(synth->storage.oddsound_mts_client);
+        mm = addCallbackMenu(tuningSubMenu, mtsScale, []() {});
+        mm->setEnabled(false);
+        // a 'turn mts off' menu
+
+        addCallbackMenu(tuningSubMenu, Surge::UI::toOSCaseForMenu("Disconnect from MTS-ESP"),
+                        [this]() {
+                            auto q = this->synth->storage.oddsound_mts_client;
+                            this->synth->storage.oddsound_mts_active = false;
+                            this->synth->storage.oddsound_mts_client = nullptr;
+                            MTS_DeregisterClient(q);
+                        });
+
+        return tuningSubMenu;
+    }
+
     bool isTuningEnabled = !synth->storage.isStandardTuning;
     bool isMappingEnabled = !synth->storage.isStandardMapping;
 
@@ -5869,6 +5871,28 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeTuningMenu(VSTGUI::CRect &menuRect, boo
     mod->setChecked(synth->storage.tuningApplicationMode == SurgeStorage::RETUNE_ALL);
     tid++;
 
+    bool tsMode = Surge::Storage::getUserDefaultValue(&(this->synth->storage), "useODDMTS", false);
+    auto menuItem = addCallbackMenu(
+        tuningSubMenu, Surge::UI::toOSCaseForMenu("Use ODDSound MTS-ESP If Installed"),
+        [this, tsMode]() {
+            Surge::Storage::updateUserDefaultValue(&(this->synth->storage), "useODDMTS", !tsMode);
+            if (tsMode)
+            {
+                // We toggled to false
+                this->synth->storage.deinitialize_oddsound();
+            }
+            else
+            {
+                this->synth->storage.initialize_oddsound();
+            }
+        });
+
+    if (tsMode && !this->synth->storage.oddsound_mts_client)
+    {
+        addCallbackMenu(tuningSubMenu, Surge::UI::toOSCaseForMenu("Try To ReConnect To MTS-ESP"),
+                        [this]() { this->synth->storage.initialize_oddsound(); });
+    }
+    menuItem->setChecked(tsMode);
     tuningSubMenu->addSeparator();
     tid++;
     auto *sct = addCallbackMenu(
@@ -6142,7 +6166,7 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeUserSettingsMenu(VSTGUI::CRect &menuRec
             char txt[256];
             txt[0] = 0;
             if (Surge::Storage::isValidUTF8(s))
-                strncpy(txt, s.c_str(), 256);
+                strxcpy(txt, s.c_str(), 256);
             promptForMiniEdit(txt, "Enter default patch author name:", "Set Default Patch Author",
                               menuRect.getTopLeft(), [this](const std::string &s) {
                                   Surge::Storage::updateUserDefaultValue(&(this->synth->storage),
@@ -6158,7 +6182,7 @@ VSTGUI::COptionMenu *SurgeGUIEditor::makeUserSettingsMenu(VSTGUI::CRect &menuRec
             char txt[256];
             txt[0] = 0;
             if (Surge::Storage::isValidUTF8(s))
-                strncpy(txt, s.c_str(), 256);
+                strxcpy(txt, s.c_str(), 256);
             promptForMiniEdit(txt, "Enter default patch comment text:", "Set Default Patch Comment",
                               menuRect.getTopLeft(), [this](const std::string &s) {
                                   Surge::Storage::updateUserDefaultValue(&(this->synth->storage),
@@ -7995,6 +8019,24 @@ SurgeGUIEditor::layoutComponentForSkin(std::shared_ptr<Surge::UI::Skin::Control>
         hs->setLabel(p->get_name());
         hs->setModPresent(synth->isModDestUsed(p->id));
         hs->setDefaultValue(p->get_default_value_f01());
+        hs->font_style = Surge::UI::Skin::setFontStyleProperty(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::FONT_STYLE, "normal"));
+
+        hs->text_align = Surge::UI::Skin::setTextAlignProperty(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_ALIGN, "right"));
+
+        // CSurgeSlider is using labfont = displayFont, which is currently 9 pt in size
+        // TODO: Pull the default font size from some central location at a later date
+        hs->font_size = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::FONT_SIZE, "9").c_str());
+
+        hs->text_hoffset = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_HOFFSET, "0")
+                .c_str());
+
+        hs->text_voffset = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_VOFFSET, "0")
+                .c_str());
 
         if (p->can_deactivate())
             hs->deactivated = p->deactivated;
@@ -8177,8 +8219,25 @@ SurgeGUIEditor::layoutComponentForSkin(std::shared_ptr<Surge::UI::Skin::Control>
             rect, this, tag_osc_menu, &synth->storage,
             &synth->storage.getPatch().scene[current_scene].osc[current_osc[current_scene]],
             bitmapStore);
+
         hsw->setSkin(currentSkin, bitmapStore);
         hsw->setMouseableArea(rect);
+
+        hsw->text_allcaps = Surge::UI::Skin::setAllCapsProperty(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_ALL_CAPS, "false"));
+        hsw->font_style = Surge::UI::Skin::setFontStyleProperty(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::FONT_STYLE, "normal"));
+        hsw->text_align = Surge::UI::Skin::setTextAlignProperty(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_ALIGN, "center"));
+        hsw->font_size = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::FONT_SIZE, "8").c_str());
+        hsw->text_hoffset = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_HOFFSET, "0")
+                .c_str());
+        hsw->text_voffset = std::atoi(
+            currentSkin->propertyValue(skinCtrl, Surge::Skin::Component::TEXT_VOFFSET, "0")
+                .c_str());
+
         if (p)
             hsw->setValue(p->get_value_f01());
         // TODO: This was not on before skinnification. Why?
@@ -8381,7 +8440,7 @@ bool SurgeGUIEditor::onDrop(const std::string &fname)
                    [](unsigned char c) { return std::tolower(c); });
     if (fExt == ".wav" || fExt == ".wt")
     {
-        strncpy(synth->storage.getPatch()
+        strxcpy(synth->storage.getPatch()
                     .scene[current_scene]
                     .osc[current_osc[current_scene]]
                     .wt.queue_filename,

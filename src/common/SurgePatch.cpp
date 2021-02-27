@@ -21,6 +21,7 @@
 #include <vt_dsp/vt_dsp_endian.h>
 #include "MSEGModulationHelper.h"
 #include "DebugHelpers.h"
+#include "StringOps.h"
 #include "SkinModel.h"
 #include "UserInteractions.h"
 #include "UserDefaults.h"
@@ -86,10 +87,11 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
         {
             auto conn = Surge::Skin::Connector::connectorByID("fx.param_" + std::to_string(p + 1));
 
-            char label[16];
-            sprintf(label, "p%i", p);
-            char dawlabel[32];
-            sprintf(dawlabel, "Param %i", p + 1);
+#define LABEL_SIZE 32
+            char label[LABEL_SIZE];
+            snprintf(label, LABEL_SIZE, "p%i", p);
+            char dawlabel[LABEL_SIZE];
+            snprintf(dawlabel, LABEL_SIZE, "Param %i", p + 1);
             param_ptr.push_back(this->fx[fx].p[p].assign(
                 p_id.next(), 0, label, dawlabel, ct_none, conn, 0, cg_FX, fx, true,
                 Surge::ParamConfig::kHorizontal | kHide | ((fx == 0) ? kEasy : 0)));
@@ -138,8 +140,8 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
                 Surge::Skin::Osc::pitch, sc_id, cg_OSC, osc, true, kSemitone | sceasy));
             for (int i = 0; i < n_osc_params; i++)
             {
-                char label[16];
-                sprintf(label, "param%i", i);
+                char label[LABEL_SIZE];
+                snprintf(label, LABEL_SIZE, "param%i", i);
                 a->push_back(scene[sc].osc[osc].p[i].assign(
                     p_id.next(), id_s++, label, "-", ct_none,
                     Surge::Skin::Connector::connectorByID("osc.param_" + std::to_string(i + 1)),
@@ -167,7 +169,7 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
                                             cg_GLOBAL, 0, true));
 
         a->push_back(scene[sc].noise_colour.assign(
-            p_id.next(), id_s++, "noisecol", "Noise Color", ct_percent_bidirectional,
+            p_id.next(), id_s++, "noisecol", "Noise Color", ct_percent_bipolar,
             Surge::Skin::Scene::noise_color, sc_id, cg_GLOBAL, 0, true, sceasy));
         a->push_back(scene[sc].keytrack_root.assign(
             p_id.next(), id_s++, "ktrkroot", "Keytrack Root Key", ct_midikey,
@@ -178,12 +180,12 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
         a->push_back(scene[sc].volume.assign(p_id.next(), id_s++, "volume", "Volume",
                                              ct_amplitude_clipper, Surge::Skin::Scene::volume,
                                              sc_id, cg_GLOBAL, 0, true, sceasy));
-        a->push_back(scene[sc].pan.assign(p_id.next(), id_s++, "pan", "Pan",
-                                          ct_percent_bidirectional, Surge::Skin::Scene::pan, sc_id,
-                                          cg_GLOBAL, 0, true, sceasy));
+        a->push_back(scene[sc].pan.assign(p_id.next(), id_s++, "pan", "Pan", ct_percent_bipolar,
+                                          Surge::Skin::Scene::pan, sc_id, cg_GLOBAL, 0, true,
+                                          sceasy));
         a->push_back(scene[sc].width.assign(p_id.next(), id_s++, "pan2", "Width",
-                                            ct_percent_bidirectional, Surge::Skin::Scene::width,
-                                            sc_id, cg_GLOBAL, 0, true, sceasy));
+                                            ct_percent_bipolar, Surge::Skin::Scene::width, sc_id,
+                                            cg_GLOBAL, 0, true, sceasy));
         a->push_back(scene[sc].send_level[0].assign(
             p_id.next(), id_s++, "send_fx_1", "Send FX 1 Level", ct_sendlevel,
             Surge::Skin::Scene::send_fx_1, sc_id, cg_GLOBAL, 0, true, sceasy));
@@ -281,15 +283,15 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
             p_id.next(), id_s++, "vca_velsense", "Velocity > VCA Gain", ct_decibel_attenuation,
             Surge::Skin::Scene::vel_sensitivity, sc_id, cg_GLOBAL, 0, false));
 
-        a->push_back(scene[sc].feedback.assign(
-            p_id.next(), id_s++, "feedback", "Feedback", ct_percent_bidirectional,
-            Surge::Skin::Filter::feedback, sc_id, cg_GLOBAL, 0, true,
-            Surge::ParamConfig::kHorizontal | kWhite | sceasy));
+        a->push_back(scene[sc].feedback.assign(p_id.next(), id_s++, "feedback", "Feedback",
+                                               ct_percent_bipolar, Surge::Skin::Filter::feedback,
+                                               sc_id, cg_GLOBAL, 0, true,
+                                               Surge::ParamConfig::kHorizontal | kWhite | sceasy));
         a->push_back(scene[sc].filterblock_configuration.assign(
             p_id.next(), id_s++, "fb_config", "Filter Configuration", ct_fbconfig,
             Surge::Skin::Filter::config, sc_id, cg_GLOBAL, 0, false));
         a->push_back(scene[sc].filter_balance.assign(
-            p_id.next(), id_s++, "f_balance", "Filter Balance", ct_percent_bidirectional,
+            p_id.next(), id_s++, "f_balance", "Filter Balance", ct_percent_bipolar,
             Surge::Skin::Filter::balance, sc_id, cg_GLOBAL, 0, true, sceasy));
 
         a->push_back(scene[sc].lowcut.assign(p_id.next(), id_s++, "lowcut", "Highpass", ct_freq_hpf,
@@ -336,7 +338,7 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
                 Surge::Skin::Connector::connectorByID("filter.envmod_" + std::to_string(f + 1)),
                 sc_id, cg_FILTER, f, true, sceasy));
             a->push_back(scene[sc].filterunit[f].keytrack.assign(
-                p_id.next(), id_s++, "keytrack", "Keytrack", ct_percent_bidirectional,
+                p_id.next(), id_s++, "keytrack", "Keytrack", ct_percent_bipolar,
                 Surge::Skin::Connector::connectorByID("filter.keytrack_" + std::to_string(f + 1)),
                 sc_id, cg_FILTER, f, true));
         }
@@ -385,61 +387,61 @@ SurgePatch::SurgePatch(SurgeStorage *storage)
 
         for (int l = 0; l < n_lfos; l++)
         {
-            char label[32];
+            char label[LABEL_SIZE];
 
-            sprintf(label, "lfo%i_shape", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_shape", l);
             a->push_back(scene[sc].lfo[l].shape.assign(p_id.next(), id_s++, label, "Type",
                                                        ct_lfotype, Surge::Skin::LFO::shape, sc_id,
                                                        cg_LFO, ms_lfo1 + l));
 
-            sprintf(label, "lfo%i_rate", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_rate", l);
             a->push_back(scene[sc].lfo[l].rate.assign(
                 p_id.next(), id_s++, label, "Rate", ct_lforate_deactivatable,
                 Surge::Skin::LFO::rate, sc_id, cg_LFO, ms_lfo1 + l, true, sceasy, false));
-            sprintf(label, "lfo%i_phase", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_phase", l);
             a->push_back(scene[sc].lfo[l].start_phase.assign(
                 p_id.next(), id_s++, label, "Phase / Shuffle", ct_percent, Surge::Skin::LFO::phase,
                 // Surge::Skin::LfoSection::phase,
                 sc_id, cg_LFO, ms_lfo1 + l, true));
-            sprintf(label, "lfo%i_magnitude", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_magnitude", l);
             a->push_back(scene[sc].lfo[l].magnitude.assign(
                 p_id.next(), id_s++, label, "Amplitude", ct_lfoamplitude,
                 Surge::Skin::LFO::amplitude, sc_id, cg_LFO, ms_lfo1 + l, true, sceasy));
-            sprintf(label, "lfo%i_deform", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_deform", l);
             a->push_back(scene[sc].lfo[l].deform.assign(p_id.next(), id_s++, label, "Deform",
                                                         ct_lfodeform, Surge::Skin::LFO::deform,
                                                         sc_id, cg_LFO, ms_lfo1 + l, true));
 
-            sprintf(label, "lfo%i_trigmode", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_trigmode", l);
             a->push_back(scene[sc].lfo[l].trigmode.assign(
                 p_id.next(), id_s++, label, "Trigger Mode", ct_lfotrigmode,
                 Surge::Skin::LFO::trigger_mode, sc_id, cg_LFO, ms_lfo1 + l, false, kNoPopup));
-            sprintf(label, "lfo%i_unipolar", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_unipolar", l);
             a->push_back(scene[sc].lfo[l].unipolar.assign(
                 p_id.next(), id_s++, label, "Unipolar", ct_bool_unipolar,
                 Surge::Skin::LFO::unipolar, sc_id, cg_LFO, ms_lfo1 + l, false));
 
-            sprintf(label, "lfo%i_delay", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_delay", l);
             a->push_back(scene[sc].lfo[l].delay.assign(p_id.next(), id_s++, label, "Delay",
                                                        ct_envtime, Surge::Skin::LFO::delay, sc_id,
                                                        cg_LFO, ms_lfo1 + l, true, kMini));
-            sprintf(label, "lfo%i_attack", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_attack", l);
             a->push_back(scene[sc].lfo[l].attack.assign(p_id.next(), id_s++, label, "Attack",
                                                         ct_envtime, Surge::Skin::LFO::attack, sc_id,
                                                         cg_LFO, ms_lfo1 + l, true, kMini));
-            sprintf(label, "lfo%i_hold", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_hold", l);
             a->push_back(scene[sc].lfo[l].hold.assign(p_id.next(), id_s++, label, "Hold",
                                                       ct_envtime, Surge::Skin::LFO::hold, sc_id,
                                                       cg_LFO, ms_lfo1 + l, true, kMini));
-            sprintf(label, "lfo%i_decay", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_decay", l);
             a->push_back(scene[sc].lfo[l].decay.assign(p_id.next(), id_s++, label, "Decay",
                                                        ct_envtime, Surge::Skin::LFO::decay, sc_id,
                                                        cg_LFO, ms_lfo1 + l, true, kMini));
-            sprintf(label, "lfo%i_sustain", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_sustain", l);
             a->push_back(scene[sc].lfo[l].sustain.assign(p_id.next(), id_s++, label, "Sustain",
                                                          ct_percent, Surge::Skin::LFO::sustain,
                                                          sc_id, cg_LFO, ms_lfo1 + l, true, kMini));
-            sprintf(label, "lfo%i_release", l);
+            snprintf(label, LABEL_SIZE, "lfo%i_release", l);
             a->push_back(scene[sc].lfo[l].release.assign(
                 p_id.next(), id_s++, label, "Release", ct_envtime_lfodecay,
                 Surge::Skin::LFO::release, sc_id, cg_LFO, ms_lfo1 + l, true, kMini));
@@ -549,7 +551,19 @@ void SurgePatch::init_default_values()
             osc.queue_type = -1;
             osc.keytrack.val.b = true;
             osc.retrigger.val.b = false;
-            osc.wt.queue_id = 0;
+            /*
+             * init-default-values is called at load_raw. load_raw will
+             * replace any wavetables *but* if it doesn't have a wt osc that
+             * wavetable load is pointless. So unless there's no wavetable at
+             * all ever loaded, keep what's there.
+             *
+             * We need to do something if there's nothing otherwise swapping
+             * to the wavetable oscilltor will core you out
+             */
+            if (osc.wt.current_id == -1)
+                osc.wt.queue_id = 0;
+            else
+                osc.wt.queue_id = -1;
             osc.wt.queue_filename[0] = 0;
         }
         scene[sc].fm_depth.val.f = -24.f;
@@ -632,7 +646,7 @@ void SurgePatch::init_default_values()
 
     for (int i = 0; i < n_customcontrollers; i++)
     {
-        strcpy(CustomControllerLabel[i], "-");
+        strxcpy(CustomControllerLabel[i], "-", CUSTOM_CONTROLLER_LABEL_SIZE);
     }
 }
 
@@ -874,13 +888,13 @@ void SurgePatch::load_patch(const void *data, int datasize, bool preset)
                     {
                         if (scene[sc].osc[osc].wt.flags & wtf_is_sample)
                         {
-                            strncpy(scene[sc].osc[osc].wavetable_display_name, "(Patch Sample)",
-                                    256);
+                            strxcpy(scene[sc].osc[osc].wavetable_display_name, "(Patch Sample)",
+                                    WAVETABLE_DISPLAY_NAME_SIZE);
                         }
                         else
                         {
-                            strncpy(scene[sc].osc[osc].wavetable_display_name, "(Patch Wavetable)",
-                                    256);
+                            strxcpy(scene[sc].osc[osc].wavetable_display_name, "(Patch Wavetable)",
+                                    WAVETABLE_DISPLAY_NAME_SIZE);
                         }
                     }
                     storage->waveTableDataMutex.unlock();
@@ -1578,8 +1592,8 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
 
                 if (lkid->Attribute("wavetable_display_name"))
                 {
-                    strncpy(scene[ssc].osc[sos].wavetable_display_name,
-                            lkid->Attribute("wavetable_display_name"), 256);
+                    strxcpy(scene[ssc].osc[sos].wavetable_display_name,
+                            lkid->Attribute("wavetable_display_name"), WAVETABLE_DISPLAY_NAME_SIZE);
                 }
             }
         }
@@ -1695,8 +1709,7 @@ void SurgePatch::load_xml(const void *data, int datasize, bool is_preset)
             const char *lbl = p->Attribute("label");
             if (lbl)
             {
-                strncpy(CustomControllerLabel[cont], lbl, 16);
-                CustomControllerLabel[cont][15] = 0;
+                strxcpy(CustomControllerLabel[cont], lbl, CUSTOM_CONTROLLER_LABEL_SIZE);
             }
         }
         p = TINYXML_SAFE_TO_ELEMENT(p->NextSibling("entry"));
@@ -1930,7 +1943,7 @@ struct srge_header
 
 unsigned int SurgePatch::save_xml(void **data) // allocates mem, must be freed by the callee
 {
-    char tempstr[64];
+    char tempstr[TXT_SIZE];
     assert(data);
     if (!data)
         return 0;
@@ -2086,7 +2099,6 @@ unsigned int SurgePatch::save_xml(void **data) // allocates mem, must be freed b
         {
             if (scene[sc].lfo[l].shape.val.i == lt_stepseq)
             {
-                char txt[256], txt2[256];
                 TiXmlElement p("sequence");
                 p.SetAttribute("scene", sc);
                 p.SetAttribute("i", l);
@@ -2121,7 +2133,7 @@ unsigned int SurgePatch::save_xml(void **data) // allocates mem, must be freed b
     TiXmlElement cc("customcontroller");
     for (int l = 0; l < n_customcontrollers; l++)
     {
-        char txt2[256];
+        char txt2[TXT_SIZE];
         TiXmlElement p("entry");
         p.SetAttribute("i", l);
         p.SetAttribute("bipolar", scene[0].modsources[ms_ctrl1 + l]->is_bipolar() ? 1 : 0);
@@ -2136,12 +2148,12 @@ unsigned int SurgePatch::save_xml(void **data) // allocates mem, must be freed b
     patch.InsertEndChild(cc);
 
     {
-        char txt[256];
+        char txt[TXT_SIZE];
         TiXmlElement mw("modwheel");
         for (int sc = 0; sc < n_scenes; sc++)
         {
-            char str[32];
-            sprintf(str, "s%d", sc);
+            char str[TXT_SIZE];
+            snprintf(str, TXT_SIZE, "s%d", sc);
             mw.SetAttribute(
                 str, float_to_str(
                          ((ControllerModulationSource *)scene[sc].modsources[ms_modwheel])->target,
@@ -2447,10 +2459,10 @@ void SurgePatch::msegFromXMLElement(MSEGStorage *ms, TiXmlElement *p, bool resto
 void SurgePatch::stepSeqToXmlElement(StepSequencerStorage *ss, TiXmlElement &p,
                                      bool streamMask) const
 {
-    char txt[256], txt2[256];
+    char txt[TXT_SIZE], txt2[TXT_SIZE];
     for (int s = 0; s < n_stepseqsteps; s++)
     {
-        sprintf(txt, "s%i", s);
+        snprintf(txt, TXT_SIZE, "s%i", s);
         if (ss->steps[s] != 0.f)
             p.SetAttribute(txt, float_to_str(ss->steps[s], txt2));
     }
@@ -2511,8 +2523,8 @@ void SurgePatch::stepSeqFromXmlElement(StepSequencerStorage *ss, TiXmlElement *p
 
     for (int s = 0; s < n_stepseqsteps; s++)
     {
-        char txt[256];
-        sprintf(txt, "s%i", s);
+        char txt[TXT_SIZE];
+        snprintf(txt, TXT_SIZE, "s%i", s);
         if (p->QueryDoubleAttribute(txt, &d) == TIXML_SUCCESS)
             ss->steps[s] = (float)d;
         else

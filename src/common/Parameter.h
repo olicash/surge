@@ -40,8 +40,9 @@ enum ctrltypes
 {
     ct_none,
     ct_percent,
-    ct_percent_bidirectional,
-    ct_percent_bidirectional_stereo, // a bidirectional with special string at -100% +100% and 0%
+    ct_percent_bipolar,
+    ct_percent_bipolar_stereo,    // bipolar with special text strings at -100% +100% and 0%
+    ct_percent_bipolar_stringbal, // bipolar with special text strings
     ct_pitch_octave,
     ct_pitch_semi7bp,
     ct_pitch_semi7bp_absolutable,
@@ -99,6 +100,7 @@ enum ctrltypes
     ct_osccount,
     ct_osccountWT,
     ct_oscspread,
+    ct_oscspread_bipolar,
     ct_scenemode,
     ct_scenesel,
     ct_polymode,
@@ -415,9 +417,10 @@ class Parameter
         kUnitsAreSemitonesOrKeys = 1U << 5U
     };
 
+#define DISPLAYINFO_TXT_SIZE 128
     struct DisplayInfo
     {
-        char unit[128]{}, absoluteUnit[128]{};
+        char unit[DISPLAYINFO_TXT_SIZE]{}, absoluteUnit[DISPLAYINFO_TXT_SIZE]{};
         float scale = 1;
         float a = 1.0, b = 1.0;
         int decimals = 2;
@@ -425,7 +428,8 @@ class Parameter
 
         float tempoSyncNotationMultiplier = 1.f;
 
-        char minLabel[128]{}, maxLabel[128]{}, defLabel[128]{};
+        char minLabel[DISPLAYINFO_TXT_SIZE]{}, maxLabel[DISPLAYINFO_TXT_SIZE]{},
+            defLabel[DISPLAYINFO_TXT_SIZE]{};
         float minLabelValue = 0.f, maxLabelValue = 0.f;
 
         float modulationCap = -1.f;

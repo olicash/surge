@@ -78,10 +78,10 @@ Component::Component(const std::string &internalClassname) noexcept
     payload->internalClassname = internalClassname;
     guaranteeMap();
     registeredComponents->insert(std::make_pair(payload->id, payload));
-    withProperty(Properties::X, {"x"}, "X Position");
-    withProperty(Properties::Y, {"y"}, "Y Position");
-    withProperty(Properties::W, {"w"}, "Width");
-    withProperty(Properties::H, {"h"}, "Height");
+    withProperty(Properties::X, {"x"}, "X position of the widget");
+    withProperty(Properties::Y, {"y"}, "Y position of the widget");
+    withProperty(Properties::W, {"w"}, "Width of the widget");
+    withProperty(Properties::H, {"h"}, "Height of the widget");
 }
 
 Component::~Component() {}
@@ -129,8 +129,6 @@ std::string Component::propertyEnumToString(Properties p)
         PN(FRAME_OFFSET)
         PN(NUMBERFIELD_CONTROLMODE)
         PN(DRAGGABLE_HSWITCH)
-        PN(TEXT_COLOR)
-        PN(TEXT_HOVER_COLOR)
         PN(BACKGROUND_COLOR)
         PN(FRAME_COLOR)
 
@@ -141,11 +139,16 @@ std::string Component::propertyEnumToString(Properties p)
         PN(HANDLE_TEMPOSYNC_HOVER_IMAGE)
         PN(HIDE_SLIDER_LABEL)
 
-        PN(TEXT)
         PN(CONTROL_TEXT)
-        PN(TEXT_ALIGN)
         PN(FONT_SIZE)
         PN(FONT_STYLE)
+        PN(TEXT)
+        PN(TEXT_ALIGN)
+        PN(TEXT_ALL_CAPS)
+        PN(TEXT_COLOR)
+        PN(TEXT_HOVER_COLOR)
+        PN(TEXT_HOFFSET)
+        PN(TEXT_VOFFSET)
 
         PN(GLYPH_PLACEMENT)
         PN(GLYPH_W)

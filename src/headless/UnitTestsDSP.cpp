@@ -13,6 +13,8 @@
 
 #include "SSESincDelayLine.h"
 
+#include "samplerate.h"
+
 using namespace Surge::Test;
 
 TEST_CASE("Simple Single Oscillator is Constant", "[dsp]")
@@ -592,6 +594,115 @@ TEST_CASE("Sinc Delay Line", "[dsp]")
 
             dl4096.write(val);
             val += dRamp;
+        }
+    }
+
+#if 0
+// This prints output I used for debugging
+    SECTION( "Generate Output" )
+    {
+        float dRamp = 0.01;
+        SSESincDelayLine<4096> dl4096;
+
+        float v = 0;
+        int nsamp = 500;
+        for( int i=0; i<nsamp; ++i )
+        {
+            dl4096.write(v);
+            v += dRamp;
+        }
+
+        for( int i=100; i<300; ++i )
+        {
+            auto bi = dl4096.buffer[i];
+            auto off = nsamp - i;
+            auto bsv = dl4096.read(off - 1);
+            auto bsl = dl4096.readLinear(off);
+
+            auto bsvh = dl4096.read(off - 1 - 0.5);
+            auto bslh = dl4096.readLinear(off - 0.0 );
+            std::cout << off << ", " << bi << ", " << bsv
+                      << ", " << bsl << ", " << bi -bsv << ", " << bi-bsl
+                      << ", " << bslh << ", " << bi - bslh << std::endl;
+
+            for( int q=0; q<111; ++q )
+            {
+                std::cout << " " << q << " "
+                          << ( dl4096.read(off - q * 0.1) - bi ) / dRamp
+                          << " " << ( dl4096.readLinear(off - q * 0.1) - bi ) / dRamp
+                          << std::endl;
+            }
+        }
+    }
+#endif
+}
+
+TEST_CASE("libsamplerate basics", "[dsp]")
+{
+    for (auto tsr : {44100, 48000}) // { 44100, 48000, 88200, 96000, 192000 })
+    {
+        for (auto ssr : {44100, 48000, 88200})
+        {
+            DYNAMIC_SECTION("libsamplerate from " << ssr << " to " << tsr)
+            {
+                int error;
+                auto state = src_new(SRC_SINC_FASTEST, 1, &error);
+                REQUIRE(state);
+                REQUIRE(error == 0);
+
+                static constexpr int buffer_size = 1024 * 100;
+                static constexpr int output_block = 64;
+
+                float input_data[buffer_size];
+                float copied_output[buffer_size];
+
+                int cwp = 0, irp = 0;
+                float output_data[output_block];
+
+                float dPhase = 440.0 / ssr * 2.0 * M_PI;
+                float phase = 0;
+                for (int i = 0; i < buffer_size; ++i)
+                {
+                    input_data[i] = std::sin(phase);
+                    phase += dPhase;
+                    if (phase >= 2.0 * M_PI)
+                        phase -= 2.0 * M_PI;
+                }
+
+                SRC_DATA sdata;
+                sdata.end_of_input = 0;
+                while (irp + output_block < buffer_size && cwp + output_block < buffer_size)
+                {
+                    sdata.data_in = &(input_data[irp]);
+                    sdata.data_out = output_data;
+                    sdata.input_frames = 64;
+                    sdata.output_frames = 64;
+                    sdata.src_ratio = 1.0 * tsr / ssr;
+
+                    auto res = src_process(state, &sdata);
+                    memcpy((void *)(copied_output + cwp), (void *)output_data,
+                           sdata.output_frames_gen * sizeof(float));
+                    irp += sdata.input_frames_used;
+                    cwp += sdata.output_frames_gen;
+                    REQUIRE(res == 0);
+                    REQUIRE(sdata.input_frames_used + sdata.output_frames_gen > 0);
+                }
+
+                state = src_delete(state);
+                REQUIRE(!state);
+
+                // At this point the output block should be a 440hz sine wave at the target rate
+                dPhase = 440.0 / tsr * 2.0 * M_PI;
+                phase = 0;
+                for (int i = 0; i < cwp; ++i)
+                {
+                    auto cw = std::sin(phase);
+                    REQUIRE(copied_output[i] == Approx(cw).margin(1e-2));
+                    phase += dPhase;
+                    if (phase >= 2.0 * M_PI)
+                        phase -= 2.0 * M_PI;
+                }
+            }
         }
     }
 }
